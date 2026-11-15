@@ -24,6 +24,7 @@ final class LiveFrameHandDetectionTests: XCTestCase {
         var timings: [Double] = []
         var frames = 0
         var handFrames = 0
+        var report: [String] = []
         print("[live-hand-detection] dir: \(dir), frames: \(names.count)")
         for name in names {
             let url = URL(fileURLWithPath: dir).appendingPathComponent(name)
@@ -39,6 +40,7 @@ final class LiveFrameHandDetectionTests: XCTestCase {
             let ms = (CFAbsoluteTimeGetCurrent() - start) * 1000
             timings.append(ms); frames += 1
             if !hands.isEmpty { handFrames += 1 }
+            report.append("\(name) \(hands.count)")
             print("[live-hand-detection] \(name): \(hands.count) hand(s), \(String(format: "%.2f", ms)) ms")
             for hand in hands {
                 let confident = zip(hand.confidences, HandJoint.allCases).filter { $0.0 >= 0.3 }
@@ -50,5 +52,9 @@ final class LiveFrameHandDetectionTests: XCTestCase {
         let sorted = timings.sorted()
         let median = sorted.isEmpty ? 0 : sorted[sorted.count / 2]
         print("[live-hand-detection] summary: \(handFrames)/\(frames) frames with hands, median \(String(format: "%.2f", median)) ms/frame")
+        // XCTest can drop captured stdout at high volume — the report file is the durable result.
+        try report.joined(separator: "\n")
+            .write(to: URL(fileURLWithPath: dir).appendingPathComponent("detection-report.txt"),
+                   atomically: true, encoding: .utf8)
     }
 }

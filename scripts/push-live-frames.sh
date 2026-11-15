@@ -14,8 +14,9 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$REPO_ROOT/live-probe-frames"
 
 mkdir -p "$DEST"
-rm -f "$DEST"/*.png "$DEST"/run-info.txt
+rm -f "$DEST"/*.png "$DEST"/run-info.txt "$DEST"/detection-report.txt
 cp "$OUT_DIR"/*.png "$DEST"/
+[ -f "$OUT_DIR/detection-report.txt" ] && cp "$OUT_DIR/detection-report.txt" "$DEST"/
 
 if ! ls "$DEST"/*.png >/dev/null 2>&1; then
     echo "no PNGs found in $OUT_DIR" >&2

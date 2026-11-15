@@ -2,8 +2,9 @@
 // Run it from the bundle (dist/XRealMirror.app/Contents/MacOS/XRealProbe) so the app's camera permission applies.
 //
 //   XRealProbe --devices              list external video devices, exit 0 (no capture, no permission needed)
-//   XRealProbe [--frames N] [--out DIR] [--timeout SEC]
-//                                     capture N frames (default 40, incl. the 6 StereoCamera skips), verify, dump PNGs
+//   XRealProbe [--frames N] [--out DIR] [--timeout SEC] [--pairs N]
+//                                     capture N frames (default 40, incl. the 6 StereoCamera skips), verify,
+//                                     dump the first N PNG pairs (default 3) — raise --pairs for dataset captures
 import AVFoundation
 import CoreGraphics
 import Foundation
@@ -12,7 +13,6 @@ import XRealVision
 
 let banner = "XREAL PROBE"   // the bundle gate (scripts/check-bundle.sh) greps for this exact line
 let skippedByCamera = 6     // StereoCamera drops the first 6 warmup frames before the probe sees anything
-let pngPairs = 3
 
 // MARK: - Arguments
 
@@ -21,10 +21,11 @@ struct Options {
     var frames = 40
     var outDir = "/tmp/xreal-probe"
     var timeout: Double = 15
+    var pairs = 3
 }
 
 func usage() -> Never {
-    print("usage: XRealProbe [--devices] [--frames N] [--out DIR] [--timeout SEC]")
+    print("usage: XRealProbe [--devices] [--frames N] [--out DIR] [--timeout SEC] [--pairs N]")
     exit(2)
 }
 
@@ -37,6 +38,7 @@ func parseOptions() -> Options {
         case "--frames": guard let v = args.next(), let n = Int(v), n > skippedByCamera else { usage() }; o.frames = n
         case "--out": guard let v = args.next(), !v.isEmpty else { usage() }; o.outDir = v
         case "--timeout": guard let v = args.next(), let t = Double(v), t > 0 else { usage() }; o.timeout = t
+        case "--pairs": guard let v = args.next(), let n = Int(v), n > 0 else { usage() }; o.pairs = n
         case "-h", "--help": usage()
         default: print("unknown argument: \(a)"); usage()
         }
@@ -121,7 +123,7 @@ final class ProbeState: NSObject, StereoCameraDelegate, @unchecked Sendable {  /
 
     func stereoCamera(_ camera: StereoCamera, didEmit frame: StereoFrame) {
         lock.lock(); defer { lock.unlock() }
-        guard pairsSeen < pngPairs else { return }
+        guard pairsSeen < opts.pairs else { return }
         let i = pairsSeen
         pairsSeen += 1
         for (name, eye) in [("left", frame.left), ("right", frame.right)] {

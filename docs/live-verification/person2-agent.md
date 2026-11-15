@@ -16,7 +16,9 @@ frames and report the numbers. Do not edit any code.**
    ```sh
    XREAL_PROBE_PNGS="$(pwd)/live-probe-frames" swift test --filter LiveFrameHandDetectionTests
    ```
-4. Capture every line starting with `[live-hand-detection]` and report them, plus your verdict.
+4. The durable result is `live-probe-frames/detection-report.txt` — one line per frame,
+   `<name> <hands-found>` (XCTest can drop captured stdout at high volume, so read the file,
+   not just the terminal). Report a summary of it plus your verdict.
 
 ## What good looks like
 
