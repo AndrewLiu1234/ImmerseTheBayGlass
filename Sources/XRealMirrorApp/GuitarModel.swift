@@ -44,6 +44,26 @@ struct GuitarModel: Codable, Equatable, Sendable {
     var framesUsed: Int
 
     func corners(of id: Int) -> [SIMD3<Double>]? { markers.first { $0.id == id }?.corners }
+
+    /// NOMINAL F600 marker layout (read off IMG_3385: ID 7/8 centred on fret 14 just outside the fretboard on the top,
+    /// ID 9 on the headstock, 13° back-angle). Used until a real setup capture replaces it — expect cm-level errors.
+    static let nominalF600: GuitarModel = {
+        let board = Fretboard(spec: .yamahaF600)
+        let fret14 = board.fretX(14), side = board.halfWidth(atX: fret14) + 0.008 + 0.03
+        let x = SIMD3<Double>(1, 0, 0), y = SIMD3<Double>(0, 1, 0)
+        let a = 13.0 * Double.pi / 180, alongHead = SIMD3(-cos(a), 0, -sin(a))
+        func corners(center: SIMD3<Double>, right: SIMD3<Double>, down: SIMD3<Double>) -> [SIMD3<Double>] {
+            MarkerPoseEstimator.localCorners().map { center + $0.x * right + $0.y * down }
+        }
+        return GuitarModel(
+            name: "Yamaha F600 (nominal layout)", spec: .yamahaF600,
+            markers: [
+                MarkerCorners(id: 7, corners: corners(center: SIMD3(fret14, side, -0.009), right: y, down: x)),
+                MarkerCorners(id: 8, corners: corners(center: SIMD3(fret14, -side, -0.009), right: y, down: x)),
+                MarkerCorners(id: 9, corners: corners(center: 0.045 * alongHead + SIMD3(0, 0, -0.004), right: y, down: -alongHead)),
+            ],
+            measurements: .f600Estimate, scaleCheckError: 0, captureSpread: 0, framesUsed: 0)
+    }()
 }
 
 /// Builds a GuitarModel from a still capture: per frame the 3-D marker poses (MarkerPoseEstimator), plus tape.

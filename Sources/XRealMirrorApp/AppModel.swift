@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import AVFoundation
 import XRealVision
 
@@ -13,6 +14,13 @@ final class AppModel: NSObject, ObservableObject {
     /// Hands triangulated from both eyes (left-camera frame, metres). Updated with latestHands at 30 fps.
     @Published var latestHands3D: [Hand3D] = []
     @Published var pairsPerSecond: Double = 0
+    /// Fretboard stage: where the guitar is (nil = not seen), its lines projected into each eye, and where each
+    /// fingertip is on it. Uses the NOMINAL F600 marker layout until a setup capture produces the real model.
+    @Published var guitarPose: GuitarPose?
+    @Published var fretLinesLeft: [FretboardProjection.Line] = []
+    @Published var fretLinesRight: [FretboardProjection.Line] = []
+    @Published var fingerPlacements: [FingerPlacement] = []
+    let fretboard = Fretboard(spec: .yamahaF600)
 
     /// A fresh StereoCamera per capture attempt: StereoCamera.stop() leaves the session's input/output attached,
     /// so start() on a stopped instance can't re-add them. A new instance always starts clean.
@@ -20,6 +28,10 @@ final class AppModel: NSObject, ObservableObject {
     /// Fresh tracker per capture attempt, same lifecycle as the camera.
     private var handTracker: StereoHandTracker?
     private let fusion = StereoHandFusion(calibration: .xrealAir2Ultra)
+    /// Person 1's marker tracker (its detector is a no-op until their Task 4 lands → no guitar until then).
+    private var markerTracker: StereoMarkerTracker?
+    private let markerPoses = MarkerPoseEstimator(calibration: .xrealAir2Ultra)
+    private var guitarTracker = GuitarTracker(model: .nominalF600)
     private var pairCounter = 0
     private var silentSeconds = 0
     private var rateTimer: Timer?
@@ -53,6 +65,8 @@ final class AppModel: NSObject, ObservableObject {
         camera = nil
         handTracker?.delegate = nil
         handTracker = nil
+        markerTracker?.delegate = nil
+        markerTracker = nil
         rateTimer?.invalidate()
         rateTimer = nil
         retryTimer?.invalidate()
@@ -64,6 +78,8 @@ final class AppModel: NSObject, ObservableObject {
         latestFrame = nil
         latestHands = nil
         latestHands3D = []
+        guitarTracker = GuitarTracker(model: guitarTracker.model)
+        setGuitar(nil)
         pairCounter = 0
         silentSeconds = 0
         pairsPerSecond = 0
@@ -81,6 +97,9 @@ final class AppModel: NSObject, ObservableObject {
         let tracker = StereoHandTracker()
         tracker.delegate = self
         handTracker = tracker
+        let markers = StereoMarkerTracker()
+        markers.delegate = self
+        markerTracker = markers
         status = .running
         rateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tickRate() }
@@ -138,6 +157,7 @@ extension AppModel: StereoCameraDelegate {
             self.latestFrame = box.frame
             self.pairCounter += 1
             self.handTracker?.accept(box.frame)   // non-blocking enqueue (Lane 1 contract); detection runs off main
+            self.markerTracker?.accept(box.frame) // same rules: O(1), latest-wins, every other pair
         }
     }
 }
@@ -150,6 +170,39 @@ extension AppModel: StereoHandTrackerDelegate {
             guard let current = self.handTracker, ObjectIdentifier(current) == source else { return }
             self.latestHands = hands
             self.latestHands3D = self.fusion.fuse(hands)   // ≈0.3 ms: 42 ray solves
+            self.updatePlacements()
         }
+    }
+}
+
+extension AppModel: StereoMarkerTrackerDelegate {
+    // Called on the marker tracker's queue — hop to main, drop results from a tracker we've already replaced.
+    nonisolated func stereoMarkerTracker(_ tracker: StereoMarkerTracker, didDetect markers: StereoMarkers) {
+        let source = ObjectIdentifier(tracker)
+        Task { @MainActor in
+            guard let current = self.markerTracker, ObjectIdentifier(current) == source else { return }
+            let poses = self.markerPoses.estimate(left: markers.leftEye.markers, right: markers.rightEye.markers)
+            self.setGuitar(self.guitarTracker.update(poses, timestamp: CACurrentMediaTime()))
+        }
+    }
+}
+
+extension AppModel {
+    func setGuitar(_ pose: GuitarPose?) {
+        guitarPose = pose
+        if let pose {
+            fretLinesLeft = FretboardProjection.lines(board: fretboard, pose: pose, eye: .left, calibration: .xrealAir2Ultra)
+            fretLinesRight = FretboardProjection.lines(board: fretboard, pose: pose, eye: .right, calibration: .xrealAir2Ultra)
+        } else {
+            fretLinesLeft = []
+            fretLinesRight = []
+        }
+        updatePlacements()
+    }
+
+    func updatePlacements() {
+        guard let pose = guitarPose else { fingerPlacements = []; return }
+        fingerPlacements = latestHands3D.flatMap { FingerOnFretboard.place(hand: $0, pose: pose, board: fretboard) }
+            .filter(\.onNeck)
     }
 }

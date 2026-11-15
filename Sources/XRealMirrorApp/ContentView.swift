@@ -8,14 +8,14 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
-                EyeView(image: model.latestFrame?.left.image, hands: model.latestHands?.leftEye)
+                EyeView(image: model.latestFrame?.left.image, hands: model.latestHands?.leftEye, fretboard: model.fretLinesLeft)
                     .overlay(alignment: .topLeading) { paneLabel("LEFT · 0x20") }
-                EyeView(image: model.latestFrame?.right.image, hands: model.latestHands?.rightEye)
+                EyeView(image: model.latestFrame?.right.image, hands: model.latestHands?.rightEye, fretboard: model.fretLinesRight)
                     .overlay(alignment: .topLeading) { paneLabel("RIGHT · 0x21") }
                 if show3D {
-                    Hands3DView(hands: model.latestHands3D)
+                    Hands3DView(hands: model.latestHands3D, guitar: model.guitarPose, board: model.fretboard)
                         .overlay(alignment: .topLeading) { paneLabel("3D · BOTH EYES (drag to orbit)") }
-                        .overlay(alignment: .bottomLeading) { Hands3DReadout(hands: model.latestHands3D) }
+                        .overlay(alignment: .bottomLeading) { Hands3DReadout(hands: model.latestHands3D, guitar: model.guitarPose, placements: model.fingerPlacements) }
                         .frame(minWidth: 420)
                 }
             }

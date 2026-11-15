@@ -7,12 +7,16 @@ import XRealVision
 struct EyeView: NSViewRepresentable {
     let image: CGImage?
     var hands: EyeHands? = nil
+    var fretboard: [FretboardProjection.Line] = []
 
     func makeNSView(context: Context) -> EyeNSView {
         let v = EyeNSView()
         v.wantsLayer = true
         v.layer?.backgroundColor = NSColor.black.cgColor
         v.layer?.contentsGravity = .resizeAspect
+        v.fretOverlay.frame = v.bounds
+        v.fretOverlay.autoresizingMask = [.width, .height]
+        v.addSubview(v.fretOverlay)              // under the hand skeleton
         v.handOverlay.frame = v.bounds
         v.handOverlay.autoresizingMask = [.width, .height]
         v.addSubview(v.handOverlay)
@@ -21,10 +25,12 @@ struct EyeView: NSViewRepresentable {
 
     func updateNSView(_ nsView: EyeNSView, context: Context) {
         nsView.layer?.contents = image
+        nsView.fretOverlay.update(lines: fretboard)
         nsView.handOverlay.update(hands: hands)
     }
 }
 
 final class EyeNSView: NSView {
+    let fretOverlay = FretboardOverlayNSView(frame: .zero)
     let handOverlay = HandOverlayNSView(frame: .zero)
 }

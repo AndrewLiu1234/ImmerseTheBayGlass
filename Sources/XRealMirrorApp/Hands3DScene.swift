@@ -10,6 +10,9 @@ final class Hands3DScene {
     let scene = SCNScene()
     let cameraNode = SCNNode()
     private var rigs: [Hand3D.Side: HandRig] = [:]
+    /// The fretboard, drawn in the guitar frame; its transform follows the tracked guitar pose.
+    let guitarNode = SCNNode()
+    private var guitarBoardName: String?
 
     static let jointRadius: CGFloat = 0.006
     static let boneRadius: CGFloat = 0.0035
@@ -40,6 +43,8 @@ final class Hands3DScene {
 
         addGlasses(calibration)
         addGrid()
+        guitarNode.isHidden = true
+        scene.rootNode.addChildNode(guitarNode)
         for side in [Hand3D.Side.left, .right] {
             let rig = HandRig(color: Self.color(for: side))
             rigs[side] = rig
@@ -80,6 +85,43 @@ final class Hands3DScene {
         }
         for (side, rig) in rigs where !shown.contains(side) { rig.hide() }
         SCNTransaction.commit()
+    }
+
+    /// Show the fretboard at `pose` (nil hides it). Geometry is built once per fretboard spec.
+    func update(guitar pose: GuitarPose?, board: Fretboard) {
+        SCNTransaction.begin()
+        SCNTransaction.disableActions = true
+        defer { SCNTransaction.commit() }
+        guard let pose else { guitarNode.isHidden = true; return }
+        if guitarBoardName != board.spec.name { buildGuitar(board) }
+        // Scene = S · camera with S = diag(1, −1, −1) (a proper rotation), so node transform = [S·R | S·t].
+        let s = simd_double3x3(diagonal: SIMD3(1, -1, -1))
+        let r = s * pose.rotation, t = s * pose.translation
+        func f(_ v: SIMD3<Double>) -> SIMD4<Float> { SIMD4(Float(v.x), Float(v.y), Float(v.z), 0) }
+        guitarNode.simdTransform = simd_float4x4(columns: (f(r.columns.0), f(r.columns.1), f(r.columns.2),
+                                                           SIMD4(Float(t.x), Float(t.y), Float(t.z), 1)))
+        guitarNode.isHidden = false
+    }
+
+    private func buildGuitar(_ board: Fretboard) {
+        guitarNode.childNodes.forEach { $0.removeFromParentNode() }
+        func lines(_ segs: [(SIMD3<Double>, SIMD3<Double>)], color: NSColor) -> SCNNode {
+            let verts = segs.flatMap { [SCNVector3($0.0.x, $0.0.y, $0.0.z), SCNVector3($0.1.x, $0.1.y, $0.1.z)] }
+            let geo = SCNGeometry(sources: [SCNGeometrySource(vertices: verts)],
+                                  elements: [SCNGeometryElement(indices: (0..<Int32(verts.count)).map { $0 }, primitiveType: .line)])
+            let m = SCNMaterial()
+            m.diffuse.contents = color
+            m.lightingModel = .constant
+            geo.materials = [m]
+            return SCNNode(geometry: geo)
+        }
+        let end = board.fretX(board.spec.fretCount) + 0.01
+        guitarNode.addChildNode(lines([board.fretLine(0)], color: .white))
+        guitarNode.addChildNode(lines((1...board.spec.fretCount).map { board.fretLine($0) }, color: .systemYellow))
+        guitarNode.addChildNode(lines(board.strings.map { ($0.nut, $0.saddle) }, color: NSColor(white: 0.85, alpha: 1)))
+        guitarNode.addChildNode(lines([-1.0, 1.0].map { (SIMD3(0, $0 * board.halfWidth(atX: 0), 0),
+                                                         SIMD3(end, $0 * board.halfWidth(atX: end), 0)) }, color: .systemGreen))
+        guitarBoardName = board.spec.name
     }
 
     private func addGlasses(_ cal: StereoCalibration) {

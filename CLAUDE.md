@@ -14,6 +14,11 @@ and `docs/superpowers/specs/2026-11-15-hand-tracking-design.md` (stage 2; supers
   3-D hands: `StereoCalibration` (fisheye lenses + stereo extrinsics, from xr-gate's Air 2 Ultra camchain — another
   unit, a start value) → `StereoHandFusion` (pairs hands across eyes by geometry, never Vision chirality; triangulates
   21 joints) → `Hands3DScene`/`Hands3DView` (SceneKit, 1€-smoothed).
+- Fretboard (stage 4, spec `docs/superpowers/specs/2026-11-15-fretboard-tracking-design.md`): Person 1's
+  `StereoMarkerTracker` (ArUco 7/8/9) → `MarkerPoseEstimator` (stereo / one eye + 60 mm) → `GuitarTracker`
+  (`GuitarModel`: `.nominalF600` until `GuitarSetup` runs on a real capture) → `FretboardProjection` (2-D overlay per eye,
+  3-D pane) + `FingerOnFretboard` (fingertip → string / fret / height). Synthetic stereo fixtures:
+  `fixtures/markers-synthetic/` (regenerate: `GENERATE_MARKER_FIXTURES=1 swift test --filter MarkerFixtureTests`).
 - Live-data checks (skip without the env var): `XREAL_PROBE_PNGS=<dir> swift test --filter LiveFrame`.
 - `Sources/XRealProbe/`: CLI that verifies the live pipeline and dumps PNGs.
 - `Resources/Info.plist`, `scripts/bundle-app.sh`, `scripts/check-bundle.sh`: bundle and delivery gate.
