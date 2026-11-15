@@ -22,7 +22,9 @@ macOS asks for camera access the first time the app opens. If you declined, or t
 
 ## The probe
 
-`XRealProbe` checks the whole decode pipeline against the plugged-in glasses and writes sample PNGs. It ships **inside the app bundle** so it gets the app's camera permission. Always run it from there (not with `swift run`):
+`XRealProbe` checks the whole decode pipeline against the plugged-in glasses and writes sample PNGs. Run it from inside the app bundle (not with `swift run`):
+
+**Permission note:** when you start the probe from a shell, macOS checks camera permission for the *terminal app* (Terminal, iTerm, …), not for XRealMirror. Enable your terminal under System Settings → Privacy & Security → Camera and reopen it. `tccutil reset Camera com.apple.Terminal` brings the prompt back.
 
 ```bash
 dist/XRealMirror.app/Contents/MacOS/XRealProbe --devices    # list external video devices, exit 0

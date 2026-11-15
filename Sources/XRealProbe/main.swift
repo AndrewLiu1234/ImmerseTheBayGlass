@@ -154,8 +154,12 @@ guard let device = StereoCamera.findXRealDevice() else {
 print("  device: \(device.localizedName) (\(device.modelID))")
 
 guard ensureCameraPermission() else {
-    print("PROBE FAIL: camera permission not granted — run from dist/XRealMirror.app/Contents/MacOS/XRealProbe and allow")
-    print("  XRealMirror in System Settings → Privacy & Security → Camera")
+    // macOS checks camera permission for the app that launched this process: Terminal/iTerm when run from a shell,
+    // XRealMirror only when launched by the app. A terminal already marked "denied" never gets a new prompt.
+    print("PROBE FAIL: camera permission not granted (status: \(AVCaptureDevice.authorizationStatus(for: .video).rawValue))")
+    print("  Run from a terminal, the permission belongs to the TERMINAL app: System Settings → Privacy & Security →")
+    print("  Camera → enable Terminal (or iTerm, etc.), quit and reopen it, then rerun.")
+    print("  To get the prompt back: tccutil reset Camera com.apple.Terminal")
     exit(1)
 }
 
