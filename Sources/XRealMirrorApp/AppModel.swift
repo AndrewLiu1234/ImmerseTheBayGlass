@@ -8,11 +8,15 @@ final class AppModel: NSObject, ObservableObject {
 
     @Published var status: Status = .searching
     @Published var latestFrame: StereoFrame?
+    /// Lags latestFrame by up to one tracker cycle (~33 ms): the overlay runs at 30 fps, the mirror at 60.
+    @Published var latestHands: StereoHands?
     @Published var pairsPerSecond: Double = 0
 
     /// A fresh StereoCamera per capture attempt: StereoCamera.stop() leaves the session's input/output attached,
     /// so start() on a stopped instance can't re-add them. A new instance always starts clean.
     private var camera: StereoCamera?
+    /// Fresh tracker per capture attempt, same lifecycle as the camera.
+    private var handTracker: StereoHandTracker?
     private var pairCounter = 0
     private var silentSeconds = 0
     private var rateTimer: Timer?
@@ -44,6 +48,8 @@ final class AppModel: NSObject, ObservableObject {
     func stop() {
         camera?.stop()
         camera = nil
+        handTracker?.delegate = nil
+        handTracker = nil
         rateTimer?.invalidate()
         rateTimer = nil
         retryTimer?.invalidate()
@@ -53,6 +59,7 @@ final class AppModel: NSObject, ObservableObject {
     private func beginCapture() {
         stop()  // Retry/reconnect while running must not stack sessions or timers.
         latestFrame = nil
+        latestHands = nil
         pairCounter = 0
         silentSeconds = 0
         pairsPerSecond = 0
@@ -67,6 +74,9 @@ final class AppModel: NSObject, ObservableObject {
             return markMissing("Could not start the XREAL camera: \(error.localizedDescription)")
         }
         camera = cam
+        let tracker = StereoHandTracker()
+        tracker.delegate = self
+        handTracker = tracker
         status = .running
         rateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tickRate() }
@@ -123,6 +133,18 @@ extension AppModel: StereoCameraDelegate {
             guard let current = self.camera, ObjectIdentifier(current) == source else { return }
             self.latestFrame = box.frame
             self.pairCounter += 1
+            self.handTracker?.accept(box.frame)   // non-blocking enqueue (Lane 1 contract); detection runs off main
+        }
+    }
+}
+
+extension AppModel: StereoHandTrackerDelegate {
+    // Called on the tracker's queue — hop to main, drop results from a tracker we've already replaced.
+    nonisolated func stereoHandTracker(_ tracker: StereoHandTracker, didTrack hands: StereoHands) {
+        let source = ObjectIdentifier(tracker)
+        Task { @MainActor in
+            guard let current = self.handTracker, ObjectIdentifier(current) == source else { return }
+            self.latestHands = hands
         }
     }
 }

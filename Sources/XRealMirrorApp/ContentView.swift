@@ -7,9 +7,9 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
-                EyeView(image: model.latestFrame?.left.image)
+                EyeView(image: model.latestFrame?.left.image, hands: model.latestHands?.leftEye)
                     .overlay(alignment: .topLeading) { paneLabel("LEFT · 0x20") }
-                EyeView(image: model.latestFrame?.right.image)
+                EyeView(image: model.latestFrame?.right.image, hands: model.latestHands?.rightEye)
                     .overlay(alignment: .topLeading) { paneLabel("RIGHT · 0x21") }
             }
             .overlay {
