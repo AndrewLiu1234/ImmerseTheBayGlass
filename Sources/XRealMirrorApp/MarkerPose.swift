@@ -210,10 +210,12 @@ enum RigidFit {
             [szx - sxz, sxy + syx, -sxx + syy - szz, syz + szy],
             [sxy - syx, szx + sxz, syz + szy, -sxx - syy + szz],
         ]
-        // Largest-eigenvalue eigenvector by power iteration on N + shift·I (shift makes it positive definite).
-        let shift = n.flatMap { $0 }.reduce(0) { $0 + abs($1) } + 1e-12
+        // Largest-eigenvalue eigenvector by power iteration on N + shift·I. The shift is the Gershgorin bound — just
+        // enough to make the matrix positive semi-definite; a looser shift would slow convergence badly.
+        let gershgorinMin = (0..<4).map { i in n[i][i] - (0..<4).filter { $0 != i }.reduce(0) { $0 + abs(n[i][$1]) } }.min()!
+        let shift = max(0, -gershgorinMin) + 1e-12
         var q = SIMD4<Double>(1, 0.01, 0.01, 0.01)
-        for _ in 0..<300 {
+        for _ in 0..<1000 {
             var nq = SIMD4<Double>.zero
             for i in 0..<4 { nq[i] = (0..<4).reduce(0) { $0 + n[i][$1] * q[$1] } + shift * q[i] }
             let len = simd_length(nq)
