@@ -79,7 +79,12 @@ enum GuitarSetup {
     static func build(captures: [[MarkerPose3D]], measurements: GuitarMeasurements, spec: Fretboard.Spec,
                       name: String = "Yamaha F600", minFrames: Int = 5, outlierDistance: Double = 0.003,
                       maxSpread: Double = 0.002) throws -> GuitarModel {
-        let frames = captures.map { f in Dictionary(f.map { ($0.id, $0.corners()) }, uniquingKeysWith: { a, _ in a }) }
+        // Prefer stereo poses: a single eye's depth is far noisier (live setup-still: ID 9 single-eye poses spread
+        // 17 mm while its stereo distance to 7/8 held ±1.8 mm). Fall back to all poses if stereo is too sparse.
+        let stereoOnly = captures.map { $0.filter { $0.source == .stereo } }
+        let enoughStereo = requiredIDs.allSatisfy { id in stereoOnly.filter { f in f.contains { $0.id == id } }.count >= minFrames }
+        let use = enoughStereo ? stereoOnly : captures
+        let frames = use.map { f in Dictionary(f.map { ($0.id, $0.corners()) }, uniquingKeysWith: { a, _ in a }) }
         for id in requiredIDs where frames.filter({ $0[id] != nil }).count < minFrames { throw SetupError.markerNotSeen(id) }
 
         // 1. Initial map in the frame of a reference marker (8, else 7), from frames that contain it.

@@ -17,8 +17,8 @@ final class LiveFrameFretboardTests: XCTestCase {
     static let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent()
 
-    /// The marker detector for real frames. Person 1's Vision detector goes here when it lands (their Task 4).
-    static func liveDetector() -> any MarkerDetecting { NullMarkerDetector() }
+    /// The marker detector for real frames: Person 1's `MarkerDetector` (their Task 4).
+    static func liveDetector() -> any MarkerDetecting { MarkerDetector() }
 
     // MARK: - Entry points
 
@@ -52,7 +52,8 @@ final class LiveFrameFretboardTests: XCTestCase {
     /// The harness itself, on the synthetic fixtures through their ground-truth corners (no glasses, no detector).
     func testHarnessSelfTestOnSyntheticFixtures() throws {
         let r = try FretboardHarness.run(dir: MarkerFixtureTests.dir, markers: .fixtureTruth, name: "setup-still",
-                                         measurements: GuitarTestSupport.exactMeasurements, model: nil, withHands: false)
+                                         measurements: GuitarTestSupport.exactMeasurements, model: nil, withHands: false,
+                                         calibration: .xrealAir2Ultra)
         r.print()
         XCTAssertEqual(r.pairs, 20)
         XCTAssertEqual(r.sideErrorMedian ?? 1, 0, accuracy: 0.0005, "truth corners → 60 mm squares")
@@ -150,8 +151,9 @@ enum FretboardHarness {
         }
     }
 
+    /// `calibration`: `.active` (these glasses) for real frames; the fixtures were rendered with `.xrealAir2Ultra`.
     static func run(dir: URL, markers source: MarkerSource, name: String? = nil, measurements: GuitarMeasurements,
-                    model: GuitarModel?, withHands: Bool) throws -> Report {
+                    model: GuitarModel?, withHands: Bool, calibration: StereoCalibration = .active) throws -> Report {
         var report = Report(name: name ?? dir.lastPathComponent)
         let files = Set(try FileManager.default.contentsOfDirectory(atPath: dir.path))
         let indices = files.compactMap { n -> Int? in
@@ -182,7 +184,7 @@ enum FretboardHarness {
             }
         }
 
-        let estimator = MarkerPoseEstimator(calibration: .xrealAir2Ultra)
+        let estimator = MarkerPoseEstimator(calibration: calibration)
         var perPair: [[MarkerPose3D]] = []
         var centres: [String: [Double]] = [:]
         for i in indices {
@@ -221,7 +223,7 @@ enum FretboardHarness {
         // Guitar pose per pair (unsmoothed: pairs may be far apart in time) + fingertip heights for tuning.
         let board = Fretboard(spec: .yamahaF600)
         let hands = withHands ? VisionHandDetector() : nil
-        let fusion = StereoHandFusion(calibration: .xrealAir2Ultra)
+        let fusion = StereoHandFusion(calibration: calibration)
         for (n, i) in indices.enumerated() {
             let t0 = CFAbsoluteTimeGetCurrent()
             var tracker = GuitarTracker(model: useModel, smoothing: false)

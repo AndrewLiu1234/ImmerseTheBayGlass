@@ -85,3 +85,23 @@ final class GuitarSetupTests: XCTestCase {
         XCTAssertEqual(back, model)
     }
 }
+
+final class GuitarSetupStereoPreferenceTests: XCTestCase {
+    /// Noisy single-eye poses must not spoil the map when enough stereo poses exist.
+    func testSingleEyePosesAreIgnoredWhenStereoSuffices() throws {
+        var rng = SplitMix64(state: 77)
+        var caps: [[MarkerPose3D]] = []
+        for k in 0..<30 {
+            let (r, t) = GuitarTestSupport.randomGuitarPose(&rng)
+            var f = GuitarTestSupport.markerPoses(guitarRotation: r, translation: t, posSigma: 0.0005, angSigma: 0.005, rng: &rng)
+            if k % 2 == 0 {   // every other frame: an extra, badly-off single-eye ID 9 instead of the stereo one
+                f = f.map { var p = $0; if p.id == 9 { p.source = .leftOnly; p.center += SIMD3(0, 0, 0.02 * rng.gaussian()) }; return p }
+            }
+            caps.append(f)
+        }
+        let model = try GuitarSetup.build(captures: caps, measurements: GuitarTestSupport.exactMeasurements, spec: .yamahaF600)
+        let truth9 = FixtureGuitar.markers.first { $0.id == 9 }!.corners()
+        let err = zip(model.corners(of: 9)!, truth9).map { simd_distance($0, $1) }.max()!
+        XCTAssertLessThan(err, 0.002)
+    }
+}

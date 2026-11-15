@@ -72,6 +72,24 @@ struct StereoCalibration: Sendable {
         return Triangulated(point: mid, rayGap: simd_distance(p0, p1))
     }
 
+    /// The calibration the app uses: Person 1's glasses, re-fitted below.
+    static let active = andrewsUnit
+
+    /// Person 1's (Andrew's) Air 2 Ultra: lens intrinsics from the xr-gate reference below, LEFT→RIGHT extrinsics
+    /// re-fitted Sun 2026-11-15 by StereoSelfCalibration on live-probe-frames/setup-still (60 still pairs, markers
+    /// 7/8/9 via Person 1's MarkerDetector — the 60 mm side fixes the scale) + live-probe-frames (70 hand pairs,
+    /// 2856 matched joints — fix the epipolar geometry). Held-out (fit even pairs, test odd): marker stereo side error
+    /// 13.4 → 1.9 mm median, joint marker reprojection 2.5 → 1.0 px, hand ray gap 6.9 → 2.7 mm. Baseline 141.9 mm
+    /// (reference 136.4 mm). Re-run LiveStereoSelfCalibrationTests for another unit.
+    static let andrewsUnit = StereoCalibration(
+        left: xrealAir2Ultra.left, right: xrealAir2Ultra.right,
+        rotation: simd_double3x3(rows: [
+            SIMD3(0.9909856830494936, 0.015815476699599353, -0.1330309989727706),
+            SIMD3(-0.019884437383594425, 0.9993724589351592, -0.029313776144190905),
+            SIMD3(0.13248390521443265, 0.03169477904416204, 0.9906782806948355),
+        ]),
+        translation: SIMD3(-0.14110658983941196, 0.0016583315533468539, -0.01441063998262254))
+
     /// Air 2 Ultra calibration from github.com/vladoshub/xr-gate (MIT), calibration_dataset/final/xreal_air2ultra/
     /// ZBBM5DZFMP/unified_480_ccw90/camchain-camera-only.yaml: cam0 = left eye, cam1 = right eye, 480x640 upright.
     /// It's another unit of the same model — a start value; checked against Andrew's live frames (rays meet within

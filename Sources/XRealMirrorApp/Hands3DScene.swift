@@ -17,7 +17,7 @@ final class Hands3DScene {
     static let jointRadius: CGFloat = 0.006
     static let boneRadius: CGFloat = 0.0035
 
-    init(calibration: StereoCalibration = .xrealAir2Ultra) {
+    init(calibration: StereoCalibration = .active) {
         scene.background.contents = NSColor.black
         let camera = SCNCamera()
         camera.zNear = 0.01

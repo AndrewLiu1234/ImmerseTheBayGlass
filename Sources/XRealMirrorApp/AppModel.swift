@@ -29,10 +29,10 @@ final class AppModel: NSObject, ObservableObject {
     private var camera: StereoCamera?
     /// Fresh tracker per capture attempt, same lifecycle as the camera.
     private var handTracker: StereoHandTracker?
-    private let fusion = StereoHandFusion(calibration: .xrealAir2Ultra)
-    /// Person 1's marker tracker (its detector is a no-op until their Task 4 lands → no guitar until then).
+    private let fusion = StereoHandFusion(calibration: .active)
+    /// Person 1's marker tracker, running Person 1's MarkerDetector.
     private var markerTracker: StereoMarkerTracker?
-    private let markerPoses = MarkerPoseEstimator(calibration: .xrealAir2Ultra)
+    private let markerPoses = MarkerPoseEstimator(calibration: .active)
     private var guitarTracker = GuitarTracker(model: .nominalF600)
     private var pairCounter = 0
     private var silentSeconds = 0
@@ -99,7 +99,7 @@ final class AppModel: NSObject, ObservableObject {
         let tracker = StereoHandTracker()
         tracker.delegate = self
         handTracker = tracker
-        let markers = StereoMarkerTracker()
+        let markers = StereoMarkerTracker(detector: MarkerDetector())   // Person 1's detector (tracker default is a no-op)
         markers.delegate = self
         markerTracker = markers
         status = .running
@@ -193,8 +193,8 @@ extension AppModel {
     func setGuitar(_ pose: GuitarPose?) {
         guitarPose = pose
         if let pose {
-            fretLinesLeft = FretboardProjection.lines(board: fretboard, pose: pose, eye: .left, calibration: .xrealAir2Ultra)
-            fretLinesRight = FretboardProjection.lines(board: fretboard, pose: pose, eye: .right, calibration: .xrealAir2Ultra)
+            fretLinesLeft = FretboardProjection.lines(board: fretboard, pose: pose, eye: .left, calibration: .active)
+            fretLinesRight = FretboardProjection.lines(board: fretboard, pose: pose, eye: .right, calibration: .active)
         } else {
             fretLinesLeft = []
             fretLinesRight = []
@@ -209,7 +209,7 @@ extension AppModel {
         }
         fingerPlacements = latestHands3D.flatMap { FingerOnFretboard.place(hand: $0, pose: pose, board: fretboard) }
             .filter(\.onNeck)
-        fingertipMarksLeft = FingertipMarks.marks(fingerPlacements, eye: .left, calibration: .xrealAir2Ultra)
-        fingertipMarksRight = FingertipMarks.marks(fingerPlacements, eye: .right, calibration: .xrealAir2Ultra)
+        fingertipMarksLeft = FingertipMarks.marks(fingerPlacements, eye: .left, calibration: .active)
+        fingertipMarksRight = FingertipMarks.marks(fingerPlacements, eye: .right, calibration: .active)
     }
 }

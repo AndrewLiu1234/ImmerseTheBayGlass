@@ -23,7 +23,7 @@ final class LiveFrameStereoFusionTests: XCTestCase {
         XCTAssertFalse(indices.isEmpty, "no left_N/right_N pairs in \(dir)")
 
         let detector = VisionHandDetector()
-        let fusion = StereoHandFusion(calibration: .xrealAir2Ultra)
+        let fusion = StereoHandFusion(calibration: .active)
         func load(_ name: String) throws -> CGImage {
             let url = URL(fileURLWithPath: dir).appendingPathComponent(name)
             let src = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
