@@ -18,11 +18,12 @@ struct Fretboard: Sendable {
         var notes: String
 
         /// Yamaha F600. Scale 634 mm and nut 43 mm: two retailer spec listings agree (one guide's 650 mm is an
-        /// outlier). The other numbers are typical-guitar ESTIMATES until Person 1's tape measurements replace them.
+        /// outlier). The rest are Person 1's guesses (standard acoustic, not tape-measured — Sun 02:48); must match
+        /// tools/guitar/f600.json (FretboardTests checks).
         static let yamahaF600 = Spec(
             name: "Yamaha F600", scaleLength: 0.634, fretCount: 20, widthAtNut: 0.043, widthAt12th: 0.052,
-            stringSpreadAtNut: 0.036, stringSpreadAtSaddle: 0.052, stringHeightAtNut: 0.0006, stringHeightAt12th: 0.0026,
-            notes: "scale + nut from retailer specs; width@12, string spreads and heights are estimates — replace with tape numbers")
+            stringSpreadAtNut: 0.036, stringSpreadAtSaddle: 0.055, stringHeightAtNut: 0.0006, stringHeightAt12th: 0.0026,
+            notes: "Person 1 GUESSES (not tape-measured): scale 634 + nut 43 from retailer specs; width@12 ~52, nut spread ~36, saddle spread ~55 (standard acoustic), action nut 0.6 / 12th 2.6. Refine on a live setup-still if fret/string lines look off.")
     }
 
     struct GuitarString: Sendable {
