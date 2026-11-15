@@ -1,0 +1,5 @@
+2026-11-15T10:56:29Z
+frames: 120
+source: /tmp/xreal-setup-still
+dataset: setup-still
+note: guitar still, playing position, all 3 markers visible in both eyes
