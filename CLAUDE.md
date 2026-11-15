@@ -1,8 +1,10 @@
 # XRealMirror: agent notes
 
-A macOS app that mirrors both XREAL Air 2 Ultra tracking cameras live, side by side. Nothing else: no hand tracking,
-calibration, 3D, webcam fallback, recording or overlays. If a task drifts into those, stop and ask.
-Spec (authoritative: contract, constants, hazards): `docs/superpowers/specs/2026-11-14-xrealmirror-design.md`.
+A macOS app that mirrors both XREAL Air 2 Ultra tracking cameras live, side by side, and (stage 2) draws a 21-landmark
+hand skeleton over each eye pane. Nothing else: no calibration, 3D, webcam fallback, recording, gestures or MediaPipe.
+If a task drifts into those, stop and ask.
+Specs (authoritative: contract, constants, hazards): `docs/superpowers/specs/2026-11-14-xrealmirror-design.md` (stage 1)
+and `docs/superpowers/specs/2026-11-15-hand-tracking-design.md` (stage 2; supersedes stage 1 only on hand tracking/overlays).
 
 ## Layout
 
@@ -16,7 +18,7 @@ Spec (authoritative: contract, constants, hazards): `docs/superpowers/specs/2026
 | Path | Owner |
 |---|---|
 | `Sources/XRealVision/**`, `Tests/XRealVisionTests/**` | Person 1 (Vision Core) |
-| `Sources/XRealMirrorApp/**`, `Sources/XRealProbe/**`, `Resources/**`, `scripts/**`, `README.md`, `CLAUDE.md` | Person 2 (App & Probe) |
+| `Sources/XRealMirrorApp/**`, `Tests/XRealMirrorAppTests/**`, `Sources/XRealProbe/**`, `Resources/**`, `scripts/**`, `README.md`, `CLAUDE.md` | Person 2 (App, Overlay & Probe) |
 | `Package.swift`, `.gitignore`, `docs/**` | Coordinator |
 
 Edit only your own lane. If a change needs another lane's file, finish your task, report it, and let that owner make the change.
