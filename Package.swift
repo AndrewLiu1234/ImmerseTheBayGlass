@@ -9,5 +9,6 @@ let package = Package(
         .executableTarget(name: "XRealMirrorApp", dependencies: ["XRealVision"]),
         .executableTarget(name: "XRealProbe", dependencies: ["XRealVision"]),
         .testTarget(name: "XRealVisionTests", dependencies: ["XRealVision"]),
+        .testTarget(name: "XRealMirrorAppTests", dependencies: ["XRealMirrorApp"]),
     ]
 )
