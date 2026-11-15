@@ -176,4 +176,58 @@ final class FrameDecoderTests: XCTestCase {
         XCTAssertNotNil(decoded)
         XCTAssertTrue(decoded!.scan.allSatisfy { $0 == 0 })
     }
+
+    private func cgImageBytes(_ img: CGImage) -> [UInt8]? {
+        guard let data = img.dataProvider?.data as Data? else { return nil }
+        return [UInt8](data)
+    }
+    private func mirrorHorizontal(_ upright: [UInt8]) -> [UInt8] {
+        var out = upright
+        for r in 0..<FrameLayout.uprightHeight {
+            for c in 0..<FrameLayout.uprightWidth {
+                out[r * FrameLayout.uprightWidth + c] = upright[r * FrameLayout.uprightWidth + (FrameLayout.uprightWidth - 1 - c)]
+            }
+        }
+        return out
+    }
+    private func markerUpright() -> [UInt8] {
+        var u = [UInt8](repeating: 0, count: FrameLayout.uprightWidth * FrameLayout.uprightHeight)
+        u[12 * FrameLayout.uprightWidth + 34] = 0xFF   // single marker pixel at (row 12, col 34)
+        return u
+    }
+
+    func testRotateLeftOrientsMarkerPixel() {
+        let u = markerUpright()
+        XCTAssertEqual(XRealFrameDecoder.rotateLeft(scanForLeft(upright: u)), u)
+    }
+
+    func testRotateRightOrientsMarkerPixel() {
+        let u = markerUpright()
+        XCTAssertEqual(XRealFrameDecoder.rotateRight(scanForRight(upright: u)), u)
+    }
+
+    func testLeftAndRightRotationsAreNotMirrors() {
+        // The guide's trap: a plain transpose yields a mirrored image. A mirror of an
+        // asymmetric pattern must not equal the true rotation.
+        let u = markerUpright()
+        let scan = scanForLeft(upright: u)
+        XCTAssertEqual(XRealFrameDecoder.rotateLeft(scan), u)
+        XCTAssertNotEqual(XRealFrameDecoder.rotateLeft(scan), mirrorHorizontal(u))
+    }
+
+    func testMakeEyeImageChoosesRotationByCameraID() {
+        let u = markerUpright()
+        let left = XRealFrameDecoder.makeEyeImage(scan: scanForLeft(upright: u), cameraID: CameraID.left)
+        let right = XRealFrameDecoder.makeEyeImage(scan: scanForRight(upright: u), cameraID: CameraID.right)
+        XCTAssertEqual(cgImageBytes(left!), u)
+        XCTAssertEqual(cgImageBytes(right!), u)
+    }
+
+    func testMakeCGImageGeometry() {
+        let u = [UInt8](repeating: 0x80, count: FrameLayout.uprightWidth * FrameLayout.uprightHeight)
+        let img = XRealFrameDecoder.makeCGImage(upright: u)
+        XCTAssertEqual(img?.width, FrameLayout.uprightWidth)
+        XCTAssertEqual(img?.height, FrameLayout.uprightHeight)
+        XCTAssertEqual(img?.bitsPerPixel, 8)
+    }
 }

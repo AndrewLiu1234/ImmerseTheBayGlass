@@ -1,3 +1,6 @@
+import Accelerate
+import CoreGraphics
+
 public enum FrameLayout {
     public static let sensorWidth = 640
     public static let sensorHeight = 480
@@ -115,6 +118,64 @@ public enum XRealFrameDecoder {
         for i in 0..<8 { frame[m + 0x3E + i] = UInt8(truncatingIfNeeded: timestampMicros >> (8 * i)) }
         for i in FrameLayout.paddingOffset..<FrameLayout.frameBytes { frame[i] = 0x5C }
         return frame
+    }
+
+    /// Rotates the 640x480 column-major scan 90° counter-clockwise into the upright 480x640 layout
+    /// (left camera, 0x20). Uses vImageRotate90_Planar8 — a manual transpose would mirror the image.
+    public static func rotateLeft(_ scan: [UInt8]) -> [UInt8] {
+        rotate(scan, constant: UInt8(kRotate90DegreesCounterClockwise))
+    }
+
+    /// 90° clockwise (right camera, 0x21).
+    public static func rotateRight(_ scan: [UInt8]) -> [UInt8] {
+        rotate(scan, constant: UInt8(kRotate90DegreesClockwise))
+    }
+
+    private static func rotate(_ scan: [UInt8], constant: UInt8) -> [UInt8] {
+        guard scan.count == FrameLayout.imageBytes else { return [] }
+        var out = [UInt8](repeating: 0, count: FrameLayout.imageBytes)
+        scan.withUnsafeBufferPointer { srcBytes in
+            out.withUnsafeMutableBufferPointer { dstBytes in
+                var src = vImage_Buffer(
+                    data: UnsafeMutableRawPointer(mutating: srcBytes.baseAddress!),
+                    height: vImagePixelCount(FrameLayout.sensorHeight),
+                    width: vImagePixelCount(FrameLayout.sensorWidth),
+                    rowBytes: FrameLayout.sensorWidth)
+                var dst = vImage_Buffer(
+                    data: dstBytes.baseAddress!,
+                    height: vImagePixelCount(FrameLayout.sensorWidth),
+                    width: vImagePixelCount(FrameLayout.sensorHeight),
+                    rowBytes: FrameLayout.sensorHeight)
+                _ = vImageRotate90_Planar8(&src, &dst, constant, 0, vImage_Flags(kvImageNoFlags))
+            }
+        }
+        return out
+    }
+
+    /// Wraps a 480x640 greyscale upright buffer in a CGImage.
+    public static func makeCGImage(upright: [UInt8]) -> CGImage? {
+        guard upright.count == FrameLayout.uprightWidth * FrameLayout.uprightHeight else { return nil }
+        guard let provider = CGDataProvider(data: Data(upright) as CFData) else { return nil }
+        return CGImage(width: FrameLayout.uprightWidth,
+                       height: FrameLayout.uprightHeight,
+                       bitsPerComponent: 8,
+                       bitsPerPixel: 8,
+                       bytesPerRow: FrameLayout.uprightWidth,
+                       space: CGColorSpaceCreateDeviceGray(),
+                       bitmapInfo: CGBitmapInfo(rawValue: 0),
+                       provider: provider,
+                       decode: nil,
+                       shouldInterpolate: false,
+                       intent: .defaultIntent)
+    }
+
+    /// Decodes a scan into an upright CGImage, choosing the rotation by camera ID.
+    public static func makeEyeImage(scan: [UInt8], cameraID: UInt8) -> CGImage? {
+        switch cameraID {
+        case CameraID.left:  return makeCGImage(upright: rotateLeft(scan))
+        case CameraID.right: return makeCGImage(upright: rotateRight(scan))
+        default:             return nil
+        }
     }
 }
 
