@@ -1,3 +1,5 @@
+import CoreGraphics
+import Foundation
 import simd
 
 /// One decoded ArUco marker seen by one eye.
@@ -71,20 +73,99 @@ public protocol StereoMarkerTrackerDelegate: AnyObject {
     func stereoMarkerTracker(_ tracker: StereoMarkerTracker, didDetect markers: StereoMarkers)
 }
 
+/// Lane-internal detector seam (mirrors `HandDetecting`): Task 4's Vision rectangle
+/// pipeline implements this. Takes the upright eye image; implementers own any
+/// undistort / color preprocessing (spec pipeline: undistort → VNDetectRectanglesRequest).
+public protocol MarkerDetecting {
+    func detectMarkers(in image: CGImage) throws -> [MarkerObservation]
+}
+
+/// Task-5 default detector: emits no markers. Replaced by Task 4's Vision detector.
+public struct NullMarkerDetector: MarkerDetecting {
+    public init() {}
+    public func detectMarkers(in image: CGImage) throws -> [MarkerObservation] { [] }
+}
+
 /// Decimating, latest-wins, non-blocking marker tracker over the stage-1 stereo feed.
-/// Contract stub: `accept` emits nothing yet — the worker rules mirror `StereoHandTracker`
-/// and land in Person 1 Task 5.
+///
+/// Sendability: `pending`/`needWorker` are guarded by an NSLock, detection runs confined to
+/// the tracker's serial queue, and `CGImage` payloads are immutable — the stage-1 FrameBox pattern.
+///
+/// Worker model: `accept` stores the newest decimation-passing pair in `pending` and signals the
+/// worker only when `needWorker` flips false → true (same lock — no lost wakeups). The worker
+/// drains `pending` until empty. Under normal cadence every Nth pair processes; under a burst,
+/// `pending` holds only the newest (latest-wins) and one processing covers it.
 public final class StereoMarkerTracker: @unchecked Sendable {
+    private let detector: any MarkerDetecting
     private let interval: Int
+    private let lock = NSLock()
+    private var acceptedCount = 0
+    private var pending: StereoFrame?
+    private var needWorker = false
+    private let workSignal = DispatchSemaphore(value: 0)
+    private let queue = DispatchQueue(label: "com.xrealmirror.markertracker", qos: .userInteractive)
 
     public weak var delegate: StereoMarkerTrackerDelegate?
 
+    /// - Parameter detector: per-eye marker detector (Task 5 default emits nothing; Task 4 supplies the Vision one).
     /// - Parameter processEveryNthPair: process accepted pairs 0, N, 2N, … (2 = 30fps from 60fps).
-    public init(processEveryNthPair: Int = 2) {
+    public init(detector: any MarkerDetecting = NullMarkerDetector(), processEveryNthPair: Int = 2) {
+        precondition(processEveryNthPair > 0, "processEveryNthPair must be positive")
+        self.detector = detector
         self.interval = processEveryNthPair
+        queue.async { [weak self] in
+            // The 5s timeout bounds the loop's lifetime after the tracker is released: when the
+            // tracker deallocates while this closure is blocked in wait(), the next timeout
+            // re-evaluates `while let self`, finds nil, and the closure exits.
+            while let self {
+                _ = self.workSignal.wait(timeout: .now() + .seconds(5))
+                while let frame = self.takePending() {
+                    self.process(frame)
+                }
+            }
+        }
     }
 
-    /// Non-blocking, O(1) — stub: stores nothing and delivers nothing until Task 5 wires
-    /// the worker and the per-eye marker detector.
-    public func accept(_ frame: StereoFrame) {}
+    /// Non-blocking, O(1) — stores the frame and returns. Safe from any queue; the app calls
+    /// this from main inside its existing frame hop.
+    public func accept(_ frame: StereoFrame) {
+        lock.lock()
+        let index = acceptedCount
+        acceptedCount += 1
+        if index % interval == 0 {
+            pending = frame   // newest replaces any older unprocessed pair
+            if !needWorker {
+                needWorker = true
+                workSignal.signal()
+            }
+        }
+        lock.unlock()
+    }
+
+    /// Takes the newest pending frame; clears `needWorker` when nothing is left.
+    /// The signal decision in `accept` and this clear share the lock, so a frame can never
+    /// sit unprocessed with no signal pending.
+    private func takePending() -> StereoFrame? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let frame = pending else {
+            needWorker = false
+            return nil
+        }
+        pending = nil
+        return frame
+    }
+
+    private func process(_ frame: StereoFrame) {
+        let markers = StereoMarkers(
+            leftEye: EyeMarkers(markers: detectEye(frame.left.image)),
+            rightEye: EyeMarkers(markers: detectEye(frame.right.image)),
+            sequence: frame.sequence,
+            timestampMicros: frame.timestampMicros)
+        delegate?.stereoMarkerTracker(self, didDetect: markers)
+    }
+
+    private func detectEye(_ image: CGImage) -> [MarkerObservation] {
+        (try? detector.detectMarkers(in: image)) ?? []
+    }
 }
