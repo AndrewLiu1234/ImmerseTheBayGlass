@@ -15,7 +15,7 @@ struct ContentView: View {
                 if show3D {
                     Hands3DView(hands: model.latestHands3D, guitar: model.guitarPose, placements: model.fingerPlacements, board: model.fretboard)
                         .overlay(alignment: .topLeading) { paneLabel("3D · BOTH EYES (drag to orbit)") }
-                        .overlay(alignment: .bottomLeading) { Hands3DReadout(hands: model.latestHands3D, guitar: model.guitarPose, placements: model.fingerPlacements) }
+                        .overlay(alignment: .bottomLeading) { Hands3DReadout(hands: model.latestHands3D, guitar: model.guitarPose, placements: model.fingerPlacements, modelName: model.guitarModelName) }
                         .frame(minWidth: 420)
                 }
             }

@@ -11,6 +11,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/XRealMirrorApp" "$APP/Contents/MacOS/XRealMirror"
 cp "$BIN/XRealProbe"     "$APP/Contents/MacOS/XRealProbe"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+# The guitar model from the setup capture (tools/guitar/f600-markers.json); the app falls back to a nominal layout without it.
+[ -f tools/guitar/f600-markers.json ] && cp tools/guitar/f600-markers.json "$APP/Contents/Resources/guitar-model.json"
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 codesign --force --deep --sign - "$APP"
 echo "Built $APP"

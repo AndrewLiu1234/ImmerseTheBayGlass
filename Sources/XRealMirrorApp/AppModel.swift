@@ -33,7 +33,8 @@ final class AppModel: NSObject, ObservableObject {
     /// Person 1's marker tracker, running Person 1's MarkerDetector.
     private var markerTracker: StereoMarkerTracker?
     private let markerPoses = MarkerPoseEstimator(calibration: .active)
-    private var guitarTracker = GuitarTracker(model: .nominalF600)
+    private var guitarTracker = GuitarTracker(model: .bundled)
+    var guitarModelName: String { guitarTracker.model.name }
     private var pairCounter = 0
     private var silentSeconds = 0
     private var rateTimer: Timer?

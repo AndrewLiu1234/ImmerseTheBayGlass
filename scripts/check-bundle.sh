@@ -7,6 +7,7 @@ APP=dist/XRealMirror.app
 [ -d "$APP" ] || { echo "FAIL: $APP missing"; exit 1; }
 [ -x "$APP/Contents/MacOS/XRealMirror" ] || { echo "FAIL: app executable missing"; exit 1; }
 [ -x "$APP/Contents/MacOS/XRealProbe" ] || { echo "FAIL: bundled probe missing"; exit 1; }
+[ -f "$APP/Contents/Resources/guitar-model.json" ] || { echo "FAIL: guitar model missing (tools/guitar/f600-markers.json → Contents/Resources/guitar-model.json)"; exit 1; }
 USAGE=$(plutil -extract NSCameraUsageDescription raw "$APP/Contents/Info.plist" 2>/dev/null || true)
 [ -n "$USAGE" ] || { echo "FAIL: NSCameraUsageDescription missing from Info.plist"; exit 1; }
 # Capture output first, then grep: `cmd | grep -q` under pipefail can fail on SIGPIPE even when the line is there.

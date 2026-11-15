@@ -45,6 +45,16 @@ struct GuitarModel: Codable, Equatable, Sendable {
 
     func corners(of id: Int) -> [SIMD3<Double>]? { markers.first { $0.id == id }?.corners }
 
+    /// The model the app uses: the setup result bundled into the .app (scripts/bundle-app.sh copies
+    /// tools/guitar/f600-markers.json → Contents/Resources/guitar-model.json), else the nominal layout.
+    static let bundled: GuitarModel = {
+        if let url = Bundle.main.url(forResource: "guitar-model", withExtension: "json"),
+           let data = try? Data(contentsOf: url), let m = try? JSONDecoder().decode(GuitarModel.self, from: data) {
+            return m
+        }
+        return nominalF600
+    }()
+
     /// NOMINAL F600 marker layout (read off IMG_3385: ID 7/8 centred on fret 14 just outside the fretboard on the top,
     /// ID 9 on the headstock, 13° back-angle). Used until a real setup capture replaces it — expect cm-level errors.
     static let nominalF600: GuitarModel = {
@@ -120,19 +130,22 @@ enum GuitarSetup {
         }
         let p7 = pose(7), p8 = pose(8), p9 = pose(9)
         let face = { (p: (r: simd_double3x3, c: SIMD3<Double>)) in -p.r.columns.2 }
-        let z = simd_normalize(face(p7) + face(p8))
+        let zMarkers = simd_normalize(face(p7) + face(p8))
         let c9 = map[9]!
         let nut = (c9[2] + c9[3]) / 2 + measurements.headstockEdgeToNut * p9.r.columns.1
             + measurements.headstockFaceToFretboard * face(p9) + measurements.headstockSideways * p9.r.columns.0
-        let mid = (p7.c + p8.c) / 2 + measurements.fretboardAboveBodyMarkers * z
-        func axes(toward p: SIMD3<Double>) -> (SIMD3<Double>, SIMD3<Double>) {
-            var x = p - nut
-            x = simd_normalize(x - simd_dot(x, z) * z)
-            return (x, simd_cross(z, x))
+        let mid = (p7.c + p8.c) / 2 + measurements.fretboardAboveBodyMarkers * zMarkers
+        // The neck runs through BOTH measured points (nut, and fretboard height at the body markers): x = that line.
+        // The markers' facing only sets the roll about it. (Taking x ⟂ the markers' normal instead tilted the board
+        // 5° on the live setup-still: papers by the soundhole aren't exactly parallel to the neck.)
+        func axes(toward p: SIMD3<Double>) -> (SIMD3<Double>, SIMD3<Double>, SIMD3<Double>) {
+            let x = simd_normalize(p - nut)
+            let y = simd_normalize(simd_cross(zMarkers, x))
+            return (x, y, simd_cross(x, y))
         }
-        var (x, y) = axes(toward: mid)
+        var (x, y, z) = axes(toward: mid)
         let bodyPoint = mid - measurements.bodyMidpointOffsetY * y
-        (x, y) = axes(toward: bodyPoint)
+        (x, y, z) = axes(toward: bodyPoint)
         guard simd_dot(p7.c - p8.c, y) > 0 else { throw SetupError.bodyMarkersSwapped }   // ID 7 must be on the treble side
 
         let r = simd_double3x3(columns: (x, y, z))

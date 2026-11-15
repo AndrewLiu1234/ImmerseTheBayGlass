@@ -13,6 +13,9 @@ import XRealVision
 /// XREAL_PROBE_PNGS is one dataset dir (left_N.png / right_N.png) or a parent of dataset dirs (setup-still, play,
 /// distance-*, occluded, clutter — see scripts/push-live-frames.sh). Lines start with `[live-fretboard]`.
 /// Optional: XREAL_WRITE_GUITAR_MODEL=1 writes the setup result to tools/guitar/f600-markers.json.
+/// MVP: XREAL_SETUP_GATE_MM=<n> loosens the setup's per-frame outlier/spread gate to n mm (default 3 / 2 mm). With
+/// Person 1's MarkerDetector the corners jitter 2–4 px, so a still capture's per-frame spread is ~8 mm even though
+/// the average of ~20 stereo frames is good to ~2 mm. The strict gate stays the default.
 final class LiveFrameFretboardTests: XCTestCase {
     static let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -35,8 +38,9 @@ final class LiveFrameFretboardTests: XCTestCase {
         // Setup first, so the other datasets are tracked with the real model.
         var model: GuitarModel?
         for dir in dirs.sorted(by: { a, _ in a.lastPathComponent.contains("setup") }) {
+            let gate = ProcessInfo.processInfo.environment["XREAL_SETUP_GATE_MM"].flatMap(Double.init).map { $0 / 1000 }
             let r = try FretboardHarness.run(dir: dir, markers: .detector(detector), measurements: Self.measurements(),
-                                             model: model, withHands: true)
+                                             model: model, withHands: true, setupGate: gate)
             r.print()
             r.assertHealthy(file: #filePath, line: #line)
             if let m = r.setupModel {
@@ -153,7 +157,8 @@ enum FretboardHarness {
 
     /// `calibration`: `.active` (these glasses) for real frames; the fixtures were rendered with `.xrealAir2Ultra`.
     static func run(dir: URL, markers source: MarkerSource, name: String? = nil, measurements: GuitarMeasurements,
-                    model: GuitarModel?, withHands: Bool, calibration: StereoCalibration = .active) throws -> Report {
+                    model: GuitarModel?, withHands: Bool, calibration: StereoCalibration = .active,
+                    setupGate: Double? = nil) throws -> Report {
         var report = Report(name: name ?? dir.lastPathComponent)
         let files = Set(try FileManager.default.contentsOfDirectory(atPath: dir.path))
         let indices = files.compactMap { n -> Int? in
@@ -214,7 +219,9 @@ enum FretboardHarness {
         var useModel = model ?? .nominalF600
         if report.isSetup {
             do {
-                let m = try GuitarSetup.build(captures: perPair.filter { !$0.isEmpty }, measurements: measurements, spec: .yamahaF600)
+                let m = try GuitarSetup.build(captures: perPair.filter { !$0.isEmpty }, measurements: measurements,
+                                              spec: .yamahaF600, name: setupGate == nil ? "Yamaha F600" : "Yamaha F600 (MVP setup, loose gate)",
+                                              outlierDistance: setupGate ?? 0.003, maxSpread: setupGate ?? 0.002)
                 report.setupModel = m
                 useModel = m
             } catch { report.setupError = "\(error)" }

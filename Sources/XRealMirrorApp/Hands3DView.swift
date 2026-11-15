@@ -38,6 +38,7 @@ struct Hands3DReadout: View {
     let hands: [Hand3D]
     var guitar: GuitarPose? = nil
     var placements: [FingerPlacement] = []
+    var modelName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -60,9 +61,9 @@ struct Hands3DReadout: View {
     }
 
     private var guitarLine: String {
-        guard let g = guitar else { return "Guitar: not seen (markers 7/8/9)" }
+        guard let g = guitar else { return "Guitar: not seen (markers 7/8/9) · model: \(modelName)" }
         let ids = g.markersUsed.map(String.init).joined(separator: ",")
-        return g.state == .holding ? "Guitar: holding last pose" : "Guitar: tracking (markers \(ids))"
+        return g.state == .holding ? "Guitar: holding last pose" : "Guitar: tracking (markers \(ids)) · \(modelName)"
     }
 
     private func line(_ h: Hand3D) -> String {
