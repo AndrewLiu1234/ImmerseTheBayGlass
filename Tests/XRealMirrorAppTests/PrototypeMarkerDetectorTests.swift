@@ -20,12 +20,12 @@ final class PrototypeMarkerDetectorTests: XCTestCase {
 
     // MARK: - Helpers
 
-    static func fixtureGray(_ name: String) throws -> GrayImage {
+    static func fixtureGray(_ name: String) throws -> ProtoGrayImage {
         let g = try MarkerFixtureTests.loadGray(name)
-        return GrayImage(width: g.width, height: g.height, pixels: g.pixels)
+        return ProtoGrayImage(width: g.width, height: g.height, pixels: g.pixels)
     }
 
-    static func cgImage(_ g: GrayImage) -> CGImage {
+    static func cgImage(_ g: ProtoGrayImage) -> CGImage {
         let provider = CGDataProvider(data: Data(g.pixels) as CFData)!
         return CGImage(width: g.width, height: g.height, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: g.width,
                        space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: 0), provider: provider,
@@ -45,7 +45,7 @@ final class PrototypeMarkerDetectorTests: XCTestCase {
 
     /// Rotates an image 90° clockwise `quarterTurns` times; returns the image and the matching point map
     /// (OpenCV pixel-centre convention).
-    static func rotated(_ g: GrayImage, quarterTurns: Int) -> (GrayImage, (SIMD2<Double>) -> SIMD2<Double>) {
+    static func rotated(_ g: ProtoGrayImage, quarterTurns: Int) -> (ProtoGrayImage, (SIMD2<Double>) -> SIMD2<Double>) {
         var img = g
         var map: (SIMD2<Double>) -> SIMD2<Double> = { $0 }
         for _ in 0..<(quarterTurns % 4) {
@@ -55,15 +55,15 @@ final class PrototypeMarkerDetectorTests: XCTestCase {
             for y in 0..<h { for x in 0..<w { out[x * h + (h - 1 - y)] = img.pixels[y * w + x] } }
             let prev = map
             map = { p in let q = prev(p); return SIMD2(Double(h - 1) - q.y, q.x) }
-            img = GrayImage(width: h, height: w, pixels: out)
+            img = ProtoGrayImage(width: h, height: w, pixels: out)
         }
         return (img, map)
     }
 
-    static func mirrored(_ g: GrayImage) -> GrayImage {
+    static func mirrored(_ g: ProtoGrayImage) -> ProtoGrayImage {
         var out = g.pixels
         for y in 0..<g.height { for x in 0..<g.width { out[y * g.width + x] = g.pixels[y * g.width + (g.width - 1 - x)] } }
-        return GrayImage(width: g.width, height: g.height, pixels: out)
+        return ProtoGrayImage(width: g.width, height: g.height, pixels: out)
     }
 
     /// Smaller of the two mid-line extents of a quad — "how many pixels across" in its thinnest direction.
@@ -90,7 +90,7 @@ final class PrototypeMarkerDetectorTests: XCTestCase {
         var axisSq: [Double] = [], euclid: [Double] = []          // ≥ 24 px subset
         var axisSqAll: [Double] = [], euclidAll: [Double] = []    // every detected marker
         var clutterDetections = 0, wrongIDs = 0, unrefined = 0
-        var missedBig: [String] = []
+        var missedBig: [String] = [], missedSmall: [String] = []
 
         for p in pairs {
             for eye in ["left", "right"] {
@@ -117,7 +117,10 @@ final class PrototypeMarkerDetectorTests: XCTestCase {
                         d.id == t.id && zip(d.corners, t.cornersPx).map({ simd_distance($0, $1) }).max()! < 3
                     }
                     for k in keys { recall[k, default: Bucket()].total += 1; if hit != nil { recall[k]!.found += 1 } }
-                    if big && hit == nil { missedBig.append("pair \(p.index) \(eye) id \(t.id)") }
+                    if hit == nil {
+                        let tag = "\(p.index)\(eye.prefix(1))#\(t.id)(\(Int(Self.minExtent(t.cornersPx)))px,\(Int(t.incidenceDeg))°)"
+                        if big { missedBig.append(tag) } else { missedSmall.append(tag) }
+                    }
                     guard let hit else { continue }
                     for (a, b) in zip(hit.corners, t.cornersPx) {
                         let e = a - b
@@ -136,7 +139,8 @@ final class PrototypeMarkerDetectorTests: XCTestCase {
         print("[proto-detector] corner error (markers >= 24 px, \(euclid.count) corners): RMS per axis \(Self.fmt(rms)) px, p90 euclid \(Self.fmt(Self.percentile(euclid, 0.9))) px, max \(Self.fmt(euclid.max() ?? .nan)) px")
         print("[proto-detector] corner error (all detected, \(euclidAll.count) corners): RMS per axis \(Self.fmt(rmsAll)) px, p90 euclid \(Self.fmt(Self.percentile(euclidAll, 0.9))) px, max \(Self.fmt(euclidAll.max() ?? .nan)) px")
         print("[proto-detector] clutter pairs 16-19 detections: \(clutterDetections); wrong IDs anywhere: \(wrongIDs); detections without sub-pixel refinement: \(unrefined)")
-        if !missedBig.isEmpty { print("[proto-detector] missed >= 24 px: \(missedBig)") }
+        print("[proto-detector] missed >= 24 px: \(missedBig.joined(separator: " "))")
+        print("[proto-detector] missed < 24 px (pair/eye#id(min extent, incidence)): \(missedSmall.joined(separator: " "))")
 
         XCTAssertEqual(clutterDetections, 0, "no detections on clutter pairs")
         XCTAssertEqual(wrongIDs, 0, "no wrong IDs / misplaced detections")
@@ -216,13 +220,14 @@ final class PrototypeMarkerDetectorTests: XCTestCase {
         var hamming = [0, 0]
         var images = 0, unrefined = 0
         var misses: [String] = []
+        var track: [String: [[SIMD2<Double>]]] = [:]   // "eye#id" → per-frame pixel corners (for jitter)
         for n in 0..<60 {
             for eye in ["left", "right"] {
                 let url = Self.setupStill.appendingPathComponent("\(eye)_\(n).png")
                 guard FileManager.default.fileExists(atPath: url.path) else { continue }
                 // Decode the PNG up front and wrap the pixels like a live frame, so timing covers detection only
                 // (plus the CGImage → gray copy), not PNG decompression.
-                let gray = try XCTUnwrap(GrayImage(try Self.loadCG(url)))
+                let gray = try XCTUnwrap(ProtoGrayImage(try Self.loadCG(url)))
                 let img = Self.cgImage(gray)
                 images += 1
                 let t0 = DispatchTime.now().uptimeNanoseconds
@@ -235,6 +240,9 @@ final class PrototypeMarkerDetectorTests: XCTestCase {
                 unrefined += detector.detect(gray).filter { !$0.refined }.count
                 for o in obs {
                     counts[eye]![o.id, default: 0] += 1
+                    track["\(eye)#\(o.id)", default: []].append(o.corners.map {
+                        SIMD2(Double($0.x) * Double(gray.width) - 0.5, Double($0.y) * Double(gray.height) - 0.5)
+                    })
                     hamming[min(o.hammingDistance, 1)] += 1
                     XCTAssertTrue(o.corners.allSatisfy { $0.x > 0 && $0.x < 1 && $0.y > 0 && $0.y < 1 })
                 }
@@ -251,6 +259,24 @@ final class PrototypeMarkerDetectorTests: XCTestCase {
         #endif
         print("[proto-detector] real setup-still hamming 0: \(hamming[0]), hamming 1: \(hamming[1]); detections without sub-pixel refinement: \(unrefined)")
         print("[proto-detector] real setup-still misses: \(misses.joined(separator: " "))")
+        // Guitar held still: frame-to-frame corner spread is an upper bound on detector noise (includes real tremor).
+        var jitter: [String] = []
+        for key in track.keys.sorted() {
+            let frames = track[key]!
+            guard frames.count >= 10 else { continue }
+            var sq = 0.0, sqShape = 0.0, side = 0.0
+            // Shape-only: corners relative to the marker's own centroid each frame (removes rigid translation).
+            let rel = frames.map { f in f.map { $0 - f.reduce(SIMD2<Double>.zero, +) / 4 } }
+            for k in 0..<4 {
+                let mean = frames.map { $0[k] }.reduce(SIMD2<Double>.zero, +) / Double(frames.count)
+                sq += frames.map { simd_length_squared($0[k] - mean) }.reduce(0, +) / Double(frames.count) / 2
+                let meanRel = rel.map { $0[k] }.reduce(SIMD2<Double>.zero, +) / Double(rel.count)
+                sqShape += rel.map { simd_length_squared($0[k] - meanRel) }.reduce(0, +) / Double(rel.count) / 2
+            }
+            for f in frames { side += (0..<4).map { simd_distance(f[$0], f[($0 + 1) % 4]) }.reduce(0, +) / 4 }
+            jitter.append("\(key) side \(Self.fmt(side / Double(frames.count), 1)) px, corner std/axis \(Self.fmt(sqrt(sq / 4), 2)) px (shape-only \(Self.fmt(sqrt(sqShape / 4), 2)))")
+        }
+        print("[proto-detector] real setup-still corner jitter: \(jitter.joined(separator: "; "))")
         print("[proto-detector] real setup-still ms per image (\(config), incl. CGImage→gray): median \(Self.fmt(Self.percentile(ms, 0.5), 2)), p90 \(Self.fmt(Self.percentile(ms, 0.9), 2))")
         let total = counts.values.flatMap(\.values).reduce(0, +)
         XCTAssertGreaterThan(total, 0, "sanity: something found on real frames")

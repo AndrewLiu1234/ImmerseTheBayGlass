@@ -5,7 +5,7 @@ import simd
 import XRealVision
 
 /// 8-bit grayscale image, row-major, top row first. Pixel (u, v) has its centre at (u, v) (OpenCV convention).
-struct GrayImage: Sendable {
+struct ProtoGrayImage: Sendable {
     var width: Int, height: Int
     var pixels: [UInt8]
 
@@ -39,7 +39,7 @@ struct GrayImage: Sendable {
 }
 
 /// One decoded marker in pixel coordinates (OpenCV convention), contract corner order.
-struct PixelMarker: Sendable {
+struct ProtoPixelMarker: Sendable {
     var id: Int
     var corners: [SIMD2<Double>]
     var hammingDistance: Int
@@ -61,7 +61,7 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
     var minContrast = 25.0
 
     func detectMarkers(in image: CGImage) throws -> [MarkerObservation] {
-        guard let g = GrayImage(image) else { return [] }
+        guard let g = ProtoGrayImage(image) else { return [] }
         let w = Double(g.width), h = Double(g.height)
         return detectPixelMarkers(in: g).map { m in
             MarkerObservation(id: m.id,
@@ -70,17 +70,17 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
         }
     }
 
-    func detectPixelMarkers(in g: GrayImage) -> [PixelMarker] {
+    func detectPixelMarkers(in g: ProtoGrayImage) -> [ProtoPixelMarker] {
         detect(g).map(\.marker)
     }
 
     /// Detections plus whether sub-pixel refinement succeeded (false = coarse hull corners, ~1 px accuracy).
-    func detect(_ g: GrayImage) -> [(marker: PixelMarker, refined: Bool)] {
+    func detect(_ g: ProtoGrayImage) -> [(marker: ProtoPixelMarker, refined: Bool)] {
         guard g.width >= 16, g.height >= 16 else { return [] }
         let scale = Double(max(g.width, g.height)) / 640
         let radius = max(3, Int((5 * scale).rounded()))
         let minSide = 7.0 * max(1, scale * 0.5)
-        var best: [Int: (marker: PixelMarker, refined: Bool, score: Double)] = [:]
+        var best: [Int: (marker: ProtoPixelMarker, refined: Bool, score: Double)] = [:]
         for comp in darkComponents(g, radius: radius) {
             guard let coarse = fitQuad(comp.boundary, minSide: minSide), looksLikeMarker(g, coarse) else { continue }
             let fine = refineQuad(g, coarse)
@@ -89,7 +89,7 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
             let corners = (0..<4).map { quad[($0 + rot) % 4] }
             let score = contrast - 30 * Double(ham) + (fine != nil ? 100 : 0)
             if let prev = best[id], prev.score >= score { continue }
-            best[id] = (PixelMarker(id: id, corners: corners, hammingDistance: ham), fine != nil, score)
+            best[id] = (ProtoPixelMarker(id: id, corners: corners, hammingDistance: ham), fine != nil, score)
         }
         return best.keys.sorted().map { (best[$0]!.marker, best[$0]!.refined) }
     }
@@ -100,7 +100,7 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
         var boundary: [SIMD2<Double>]   // pixel-square corners of each run's ends (hull of these = hull of blob)
     }
 
-    private func darkComponents(_ g: GrayImage, radius r: Int) -> [Component] {
+    func darkComponents(_ g: ProtoGrayImage, radius r: Int) -> [Component] {
         let w = g.width, h = g.height
         // Local box mean (vImage, edge-extended), then dark = pixel + offset < mean.
         var mean = [UInt8](repeating: 0, count: w * h)
@@ -236,7 +236,7 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
         return s
     }
 
-    private func fitQuad(_ boundary: [SIMD2<Double>], minSide: Double) -> [SIMD2<Double>]? {
+    func fitQuad(_ boundary: [SIMD2<Double>], minSide: Double) -> [SIMD2<Double>]? {
         var hull = Self.convexHull(boundary)
         guard hull.count >= 4 else { return nil }
         let hullArea = Self.signedArea2(hull) / 2
@@ -283,7 +283,7 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
     // MARK: - Sub-pixel refinement
 
     @inline(__always)
-    private static func sample(_ g: GrayImage, _ x: Double, _ y: Double) -> Double {
+    private static func sample(_ g: ProtoGrayImage, _ x: Double, _ y: Double) -> Double {
         let xc = min(max(x, 0), Double(g.width - 1) - 1e-9), yc = min(max(y, 0), Double(g.height - 1) - 1e-9)
         let x0 = Int(xc), y0 = Int(yc)
         let fx = xc - Double(x0), fy = yc - Double(y0)
@@ -304,14 +304,14 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
     }
 
     /// Edge points along side A→B: the outer black/white edge crossing along the outward normal.
-    private func edgePoints(_ g: GrayImage, _ a: SIMD2<Double>, _ b: SIMD2<Double>) -> [SIMD2<Double>] {
+    func edgePoints(_ g: ProtoGrayImage, _ a: SIMD2<Double>, _ b: SIMD2<Double>) -> [SIMD2<Double>] {
         let len = simd_distance(a, b)
         let d = (b - a) / len
         let n = SIMD2(d.y, -d.x)              // outward for a clockwise-on-screen quad
         let cell = len / 6
         let rIn = min(max(0.45 * cell, 1.2), 4.0), rOut = min(max(0.6 * cell, 1.5), 4.0)
         let step = 0.25
-        let count = Int(min(max(len / 1.5, 6), 80))
+        let count = Int(min(max(len / 1.0, 6), 80))
         let margin = max(0.08 * len, 1.5)
         var pts: [SIMD2<Double>] = []
         pts.reserveCapacity(count)
@@ -388,7 +388,7 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
         return p + t * u
     }
 
-    private func refineQuad(_ g: GrayImage, _ coarse: [SIMD2<Double>]) -> [SIMD2<Double>]? {
+    func refineQuad(_ g: ProtoGrayImage, _ coarse: [SIMD2<Double>]) -> [SIMD2<Double>]? {
         var q = coarse
         for _ in 0..<2 {
             var curves: [SideCurve] = []
@@ -456,7 +456,7 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
 
     /// Cheap pre-check on the coarse quad before refinement: the black border ring must be clearly darker than
     /// the paper just outside it, and the interior must contain some white (all codes have white bits).
-    private func looksLikeMarker(_ g: GrayImage, _ q: [SIMD2<Double>]) -> Bool {
+    func looksLikeMarker(_ g: ProtoGrayImage, _ q: [SIMD2<Double>]) -> Bool {
         guard let h = Self.homography(q) else { return false }
         var border: [Double] = [], paper: [Double] = [], inner: [Double] = []
         border.reserveCapacity(20); paper.reserveCapacity(24); inner.reserveCapacity(16)
@@ -478,7 +478,7 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
 
     /// Returns (id, hamming, k, contrast): observed grid = printed rotated clockwise k times,
     /// so the printed top-left corner is quad corner k.
-    private func decode(_ g: GrayImage, _ q: [SIMD2<Double>]) -> (Int, Int, Int, Double)? {
+    func decode(_ g: ProtoGrayImage, _ q: [SIMD2<Double>]) -> (Int, Int, Int, Double)? {
         guard let h = Self.homography(q) else { return nil }
         var cells = [Double](repeating: 0, count: 36)
         let offs = [-0.22, 0, 0.22]
@@ -489,7 +489,7 @@ struct PrototypeMarkerDetector: MarkerDetecting, Sendable {
                     let p = Self.apply(h, Double(c) + 0.5 + du, Double(r) + 0.5 + dv)
                     s += Self.sample(g, p.x, p.y)
                 } }
-                cells[r * 6 + c] = s / 9
+                cells[r * 6 + c] = s / Double(offs.count * offs.count)
             }
         }
         // Paper ring just outside the black square.
