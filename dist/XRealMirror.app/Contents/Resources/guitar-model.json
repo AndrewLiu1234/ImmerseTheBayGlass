@@ -1,0 +1,103 @@
+{
+  "captureSpread" : 0.0015883299897968479,
+  "framesUsed" : 60,
+  "markers" : [
+    {
+      "corners" : [
+        [
+          0.5966367150207752,
+          0.10774324658915017,
+          -0.009609229919099885
+        ],
+        [
+          0.6001910180789426,
+          0.047862820235491724,
+          -0.010475048205684739
+        ],
+        [
+          0.5405486635281617,
+          0.04424893634336503,
+          -0.005119723113444768
+        ],
+        [
+          0.5369943604699945,
+          0.10412936269702358,
+          -0.004253904826859913
+        ]
+      ],
+      "id" : 7
+    },
+    {
+      "corners" : [
+        [
+          0.5459726528756463,
+          -0.046507964543297475,
+          -0.008146463180350385
+        ],
+        [
+          0.6057258685863283,
+          -0.045502570856926404,
+          -0.013434662973435948
+        ],
+        [
+          0.6067743553825691,
+          -0.10548421838921782,
+          -0.012981753929774591
+        ],
+        [
+          0.5470211396718873,
+          -0.1064896120755889,
+          -0.007693554136689028
+        ]
+      ],
+      "id" : 8
+    },
+    {
+      "corners" : [
+        [
+          -0.0719236522893507,
+          -0.03348588962810408,
+          0.015912465372966124
+        ],
+        [
+          -0.07497438272025528,
+          0.02640280929933993,
+          0.015115768302034548
+        ],
+        [
+          -0.017298133387964536,
+          0.029130241438456782,
+          -0.0011446811016743064
+        ],
+        [
+          -0.014247402957059844,
+          -0.030758457488987274,
+          -0.0003479840307427553
+        ]
+      ],
+      "id" : 9
+    }
+  ],
+  "measurements" : {
+    "bodyMarkersFret" : 14,
+    "bodyMidpointOffsetY" : 0,
+    "fretboardAboveBodyMarkers" : 0.009,
+    "headstockEdgeToNut" : 0.015,
+    "headstockFaceToFretboard" : 0.005,
+    "headstockSideways" : 0
+  },
+  "name" : "Yamaha F600 (MVP setup, loose gate)",
+  "scaleCheckError" : 0.2216989019172924,
+  "spec" : {
+    "fretCount" : 20,
+    "name" : "Yamaha F600",
+    "notes" : "Person 1 GUESSES (not tape-measured): scale 634 + nut 43 from retailer specs; width@12 ~52, nut spread ~36, saddle spread ~55 (standard acoustic), action nut 0.6 \/ 12th 2.6. Refine on a live setup-still if fret\/string lines look off.",
+    "scaleLength" : 0.634,
+    "stringHeightAt12th" : 0.0026,
+    "stringHeightAtNut" : 0.0006,
+    "stringSpreadAtNut" : 0.036,
+    "stringSpreadAtSaddle" : 0.055,
+    "widthAt12th" : 0.052,
+    "widthAtNut" : 0.043
+  }
+}
