@@ -84,15 +84,21 @@ public final class StereoCamera: NSObject, @unchecked Sendable, AVCaptureVideoDa
         guard let device = Self.findXRealDevice() else { throw XRealCameraError.deviceNotFound }
         let input = try AVCaptureDeviceInput(device: device)
         session.beginConfiguration()
-        defer { session.commitConfiguration() }
-        guard session.canAddInput(input) else { throw XRealCameraError.deviceNotFound }
+        guard session.canAddInput(input) else {
+            session.commitConfiguration()
+            throw XRealCameraError.deviceNotFound
+        }
         session.addInput(input)
         // videoSettings MUST stay unset: the glasses deliver a raw, unconverted UVC payload
         // (640x241 'yuvs' packaging of the 308,480-byte frame). Asking AVFoundation to convert
         // destroys the frame layout.
         output.alwaysDiscardsLateVideoFrames = true
-        guard session.canAddOutput(output) else { throw XRealCameraError.deviceNotFound }
+        guard session.canAddOutput(output) else {
+            session.commitConfiguration()
+            throw XRealCameraError.deviceNotFound
+        }
         session.addOutput(output)
+        session.commitConfiguration()   // startRunning must follow a committed configuration
         output.setSampleBufferDelegate(self, queue: queue)
         skipCounter = 6          // first frames are all zeros (sensor warmup)
         session.startRunning()
@@ -118,6 +124,19 @@ public final class StereoCamera: NSObject, @unchecked Sendable, AVCaptureVideoDa
         started = false
     }
 
+    /// Video sample buffers from AVCaptureVideoDataOutput are image-buffer-backed:
+    /// CMSampleBufferGetDataBuffer is nil for them. Reads the full raw payload from
+    /// the CVPixelBuffer instead (the device's 640x241 'yuvs' buffer is exactly
+    /// FrameLayout.frameBytes bytes).
+    static func rawBytes(from sampleBuffer: CMSampleBuffer) -> [UInt8]? {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
+        let length = CVPixelBufferGetDataSize(pixelBuffer)
+        return Array(UnsafeRawBufferPointer(start: base, count: length))
+    }
+
     nonisolated public func captureOutput(_ output: AVCaptureOutput,
                                           didOutput sampleBuffer: CMSampleBuffer,
                                           from connection: AVCaptureConnection) {
@@ -126,12 +145,7 @@ public final class StereoCamera: NSObject, @unchecked Sendable, AVCaptureVideoDa
             skipCounter -= 1
             return
         }
-        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return }
-        let length = CMBlockBufferGetDataLength(blockBuffer)
-        var bytes = [UInt8](repeating: 0, count: length)
-        let status = CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length,
-                                                destination: &bytes)
-        guard status == kCMBlockBufferNoErr,
+        guard let bytes = Self.rawBytes(from: sampleBuffer),
               let decoded = XRealFrameDecoder.decode(bytes) else { return }
         rawFrameHandler?(decoded)
         if let image = XRealFrameDecoder.makeEyeImage(scan: decoded.scan,
