@@ -247,7 +247,8 @@ final class VisionHandDetectorTests: XCTestCase {
         let hand = HandObservationMapper.map(raw)
         for i in 0..<21 {
             XCTAssertEqual(hand.landmarks[i].x, Float(i) / 21.0, accuracy: 1e-6, "joint \(i)")
-            XCTAssertEqual(hand.landmarks[i].y, Float(i) / 21.0, accuracy: 1e-6, "joint \(i) y-flipped")
+            // y' = 1 − (20−i)/21 = (i+1)/21
+            XCTAssertEqual(hand.landmarks[i].y, Float(i + 1) / 21.0, accuracy: 1e-6, "joint \(i) y-flipped")
             XCTAssertEqual(hand.confidences[i], Float(i) / 21.0, accuracy: 1e-6, "joint \(i) conf")
         }
     }
