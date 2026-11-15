@@ -20,8 +20,11 @@ final class LiveFrameFretboardTests: XCTestCase {
     static let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent()
 
-    /// The marker detector for real frames: Person 1's `MarkerDetector` (their Task 4).
-    static func liveDetector() -> any MarkerDetecting { MarkerDetector() }
+    /// The marker detector for real frames: Person 1's `MarkerDetector` (their Task 4), or the Person 2 prototype with
+    /// XREAL_MARKER_DETECTOR=prototype (Tests/XRealMirrorAppTests/Support/PrototypeMarkerDetector.swift).
+    static func liveDetector() -> any MarkerDetecting {
+        ProcessInfo.processInfo.environment["XREAL_MARKER_DETECTOR"] == "prototype" ? PrototypeMarkerDetector() : MarkerDetector()
+    }
 
     // MARK: - Entry points
 
