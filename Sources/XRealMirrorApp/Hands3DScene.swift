@@ -54,6 +54,9 @@ final class Hands3DScene {
 
     static func color(for side: Hand3D.Side) -> NSColor { side == .left ? .systemCyan : .systemOrange }
 
+    /// Current colour of a fingertip sphere (for tests and debugging).
+    func tipColor(side: Hand3D.Side, finger: FingerOnFretboard.Finger) -> NSColor? { rigs[side]?.tipColor(finger) }
+
     /// Camera frame (x right, y down, z forward) → scene frame (x right, y up, the glasses look down -z).
     nonisolated static func scenePoint(_ p: SIMD3<Double>) -> SIMD3<Float> { SIMD3(Float(p.x), Float(-p.y), Float(-p.z)) }
 
@@ -75,13 +78,17 @@ final class Hands3DScene {
     }
 
     /// Show these hands (at most one per side); sides not present are hidden and their smoothing restarts.
-    func update(_ hands: [Hand3D], timestamp: TimeInterval = CACurrentMediaTime()) {
+    /// `placements` colour the fingertips over the fretboard (green = pressing, yellow = hovering).
+    func update(_ hands: [Hand3D], placements: [FingerPlacement] = [], timestamp: TimeInterval = CACurrentMediaTime()) {
         SCNTransaction.begin()
         SCNTransaction.disableActions = true
         var shown = Set<Hand3D.Side>()
         for h in hands where !shown.contains(h.side) {
             shown.insert(h.side)
             rigs[h.side]?.show(h, timestamp: timestamp)
+            var states: [FingerOnFretboard.Finger: FingertipMarks.State] = [:]
+            for p in placements where p.side == h.side && p.onNeck { states[p.finger] = p.pressing ? .pressing : .hovering }
+            rigs[h.side]?.setTips(states)
         }
         for (side, rig) in rigs where !shown.contains(side) { rig.hide() }
         SCNTransaction.commit()
@@ -170,14 +177,27 @@ private final class HandRig {
     private var joints: [SCNNode] = []
     private var bones: [(node: SCNNode, cylinder: SCNCylinder, from: Int, to: Int)] = []
     private var filters: [OneEuroFilter3]?
+    private let color: NSColor
+    /// Fingertips get their own material so they can show the fretboard state.
+    private var tipMaterials: [FingerOnFretboard.Finger: SCNMaterial] = [:]
 
     init(color: NSColor) {
+        self.color = color
         let mat = SCNMaterial()
         mat.diffuse.contents = color
         mat.emission.contents = color.withAlphaComponent(0.35)
-        for _ in 0..<21 {
+        let tipJoints = Dictionary(uniqueKeysWithValues: FingerOnFretboard.Finger.allCases.map { ($0.tipJoint, $0) })
+        for i in 0..<21 {
             let n = SCNNode(geometry: SCNSphere(radius: Hands3DScene.jointRadius))
-            n.geometry?.materials = [mat]
+            if let finger = tipJoints[i] {
+                let m = SCNMaterial()
+                m.diffuse.contents = color
+                m.emission.contents = color.withAlphaComponent(0.35)
+                n.geometry?.materials = [m]
+                tipMaterials[finger] = m
+            } else {
+                n.geometry?.materials = [mat]
+            }
             root.addChildNode(n)
             joints.append(n)
         }
@@ -192,6 +212,16 @@ private final class HandRig {
         }
         root.isHidden = true
     }
+
+    func setTips(_ states: [FingerOnFretboard.Finger: FingertipMarks.State]) {
+        for (finger, m) in tipMaterials {
+            let c = states[finger].map(FingertipMarks.color(for:)) ?? color
+            m.diffuse.contents = c
+            m.emission.contents = c.withAlphaComponent(states[finger] == nil ? 0.35 : 0.8)
+        }
+    }
+
+    func tipColor(_ finger: FingerOnFretboard.Finger) -> NSColor? { tipMaterials[finger]?.diffuse.contents as? NSColor }
 
     func show(_ hand: Hand3D, timestamp: TimeInterval) {
         if filters == nil { filters = [OneEuroFilter3](repeating: OneEuroFilter3(), count: 21) }

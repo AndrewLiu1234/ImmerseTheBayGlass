@@ -8,6 +8,7 @@ struct EyeView: NSViewRepresentable {
     let image: CGImage?
     var hands: EyeHands? = nil
     var fretboard: [FretboardProjection.Line] = []
+    var fingertips: [FingertipMarks.Mark] = []
 
     func makeNSView(context: Context) -> EyeNSView {
         let v = EyeNSView()
@@ -25,7 +26,7 @@ struct EyeView: NSViewRepresentable {
 
     func updateNSView(_ nsView: EyeNSView, context: Context) {
         nsView.layer?.contents = image
-        nsView.fretOverlay.update(lines: fretboard)
+        nsView.fretOverlay.update(lines: fretboard, fingertips: fingertips)
         nsView.handOverlay.update(hands: hands)
     }
 }

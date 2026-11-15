@@ -5,6 +5,7 @@ import SwiftUI
 struct Hands3DView: NSViewRepresentable {
     let hands: [Hand3D]
     var guitar: GuitarPose? = nil
+    var placements: [FingerPlacement] = []
     var board = Fretboard(spec: .yamahaF600)
 
     @MainActor final class Coordinator {
@@ -27,7 +28,7 @@ struct Hands3DView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: SCNView, context: Context) {
-        context.coordinator.content.update(hands)
+        context.coordinator.content.update(hands, placements: placements)
         context.coordinator.content.update(guitar: guitar, board: board)
     }
 }

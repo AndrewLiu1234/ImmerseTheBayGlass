@@ -20,6 +20,8 @@ final class AppModel: NSObject, ObservableObject {
     @Published var fretLinesLeft: [FretboardProjection.Line] = []
     @Published var fretLinesRight: [FretboardProjection.Line] = []
     @Published var fingerPlacements: [FingerPlacement] = []
+    @Published var fingertipMarksLeft: [FingertipMarks.Mark] = []
+    @Published var fingertipMarksRight: [FingertipMarks.Mark] = []
     let fretboard = Fretboard(spec: .yamahaF600)
 
     /// A fresh StereoCamera per capture attempt: StereoCamera.stop() leaves the session's input/output attached,
@@ -201,8 +203,13 @@ extension AppModel {
     }
 
     func updatePlacements() {
-        guard let pose = guitarPose else { fingerPlacements = []; return }
+        guard let pose = guitarPose else {
+            fingerPlacements = []; fingertipMarksLeft = []; fingertipMarksRight = []
+            return
+        }
         fingerPlacements = latestHands3D.flatMap { FingerOnFretboard.place(hand: $0, pose: pose, board: fretboard) }
             .filter(\.onNeck)
+        fingertipMarksLeft = FingertipMarks.marks(fingerPlacements, eye: .left, calibration: .xrealAir2Ultra)
+        fingertipMarksRight = FingertipMarks.marks(fingerPlacements, eye: .right, calibration: .xrealAir2Ultra)
     }
 }

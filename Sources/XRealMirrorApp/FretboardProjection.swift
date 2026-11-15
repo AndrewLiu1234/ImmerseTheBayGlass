@@ -67,6 +67,8 @@ enum FretboardProjection {
 /// rules as HandOverlayNSView: flipped (top-left origin, like the contract) and mapped into the letterboxed image rect.
 final class FretboardOverlayNSView: NSView {
     private var layers: [FretboardProjection.Line.Kind: CAShapeLayer] = [:]
+    private var tipLayers: [FingertipMarks.State: CAShapeLayer] = [:]
+    static let tipRadius: CGFloat = 7
     override var isFlipped: Bool { true }
 
     override init(frame: NSRect) {
@@ -89,6 +91,17 @@ final class FretboardOverlayNSView: NSView {
             layer?.addSublayer(l)
             layers[kind] = l
         }
+        for state in [FingertipMarks.State.hovering, .pressing] {     // drawn above the fretboard lines
+            let l = CAShapeLayer()
+            let c = FingertipMarks.color(for: state).cgColor
+            l.strokeColor = c
+            l.fillColor = state == .pressing ? c : nil
+            l.lineWidth = 2.5
+            l.actions = ["path": NSNull(), "position": NSNull(), "bounds": NSNull()]
+            l.frame = bounds
+            layer?.addSublayer(l)
+            tipLayers[state] = l
+        }
     }
 
     @available(*, unavailable)
@@ -100,10 +113,11 @@ final class FretboardOverlayNSView: NSView {
         super.layout()
         CATransaction.begin(); CATransaction.setDisableActions(true)
         for l in layers.values { l.frame = bounds }
+        for l in tipLayers.values { l.frame = bounds }
         CATransaction.commit()
     }
 
-    func update(lines: [FretboardProjection.Line]) {
+    func update(lines: [FretboardProjection.Line], fingertips: [FingertipMarks.Mark] = []) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
         let rect = AspectFitRect.fit(imageWidth: FrameLayout.uprightWidth, imageHeight: FrameLayout.uprightHeight, in: bounds)
@@ -117,5 +131,14 @@ final class FretboardOverlayNSView: NSView {
             paths[line.kind] = path
         }
         for (kind, l) in layers { l.path = paths[kind] }
+        var tips: [FingertipMarks.State: CGMutablePath] = [:]
+        let r = Self.tipRadius
+        for m in fingertips {
+            let c = CGPoint(x: rect.minX + CGFloat(m.point.x) * rect.width, y: rect.minY + CGFloat(m.point.y) * rect.height)
+            let path = tips[m.state] ?? CGMutablePath()
+            path.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))
+            tips[m.state] = path
+        }
+        for (state, l) in tipLayers { l.path = tips[state] }
     }
 }

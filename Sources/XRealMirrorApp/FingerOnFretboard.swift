@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import simd
 import XRealVision
@@ -12,6 +13,7 @@ struct FingerPlacement: Sendable, Equatable {
     var height: Double          // above the fretboard surface (guitar +z), metres; negative = below/behind
     var onNeck: Bool            // over the fretboard (any string, any fret slot) and not behind it
     var pressing: Bool          // onNeck and low enough to be holding a string down
+    var tip: SIMD3<Double>      // the fingertip, LEFT camera frame (for drawing its state in each eye / in 3-D)
 
     /// e.g. "index: A string, fret 2, pressing".
     var summary: String {
@@ -45,7 +47,8 @@ enum FingerOnFretboard {
             let onNeck = overBoard && string != nil
             return FingerPlacement(finger: finger, side: hand.side, string: string,
                                    stringName: string.map { board.strings[$0].name }, fret: onNeck ? slot : nil,
-                                   height: g.z, onNeck: onNeck, pressing: onNeck && g.z < pressHeight)
+                                   height: g.z, onNeck: onNeck, pressing: onNeck && g.z < pressHeight,
+                                   tip: hand.joints[finger.tipJoint])
         }
     }
 
@@ -58,4 +61,29 @@ enum FingerOnFretboard {
     static func nearestString(x: Double, y: Double, board: Fretboard) -> Int? {
         board.strings.indices.min { abs(board.strings[$0].point(atX: x).y - y) < abs(board.strings[$1].point(atX: x).y - y) }
     }
+}
+
+/// Fingertip state marks for drawing: only fingertips over the fretboard, projected into one eye.
+enum FingertipMarks {
+    enum State: Sendable, Equatable { case pressing, hovering }
+    struct Mark: Sendable, Equatable {
+        var point: SIMD2<Float>      // contract-normalized (origin top-left, 0…1 over the 480×640 image)
+        var state: State
+    }
+
+    static func marks(_ placements: [FingerPlacement], eye: FretboardProjection.Eye,
+                      calibration: StereoCalibration) -> [Mark] {
+        placements.filter(\.onNeck).compactMap { p in
+            let px: SIMD2<Double>?
+            switch eye {
+            case .left: px = calibration.left.project(p.tip)
+            case .right: px = calibration.right.project(calibration.leftToRight(p.tip))
+            }
+            guard let px else { return nil }
+            let n = (px + 0.5) / FretboardProjection.imageSize
+            return Mark(point: SIMD2(Float(n.x), Float(n.y)), state: p.pressing ? .pressing : .hovering)
+        }
+    }
+
+    static func color(for state: State) -> NSColor { state == .pressing ? .systemGreen : .systemYellow }
 }
