@@ -48,18 +48,28 @@ public enum XRealCameraError: Error {
 /// Thin AVFoundation wrapper over the XREAL UVC device. Delivers `StereoFrame`s and raw decoded
 /// frames on its own private serial queue; consumers hop threads. Camera permission is the
 /// caller's job, not this class's.
-// @unchecked Sendable: CGImage is immutable and all mutable state is confined to `queue`;
-// the compiler cannot see the confinement, so this conformance is asserted by hand.
+// @unchecked Sendable: CGImage is immutable, and the hot path (pairer, skipCounter,
+// delivery in captureOutput) is confined to `queue`. Setup/teardown state (session,
+// output, skipCounter reset, started) is touched by start()/stop() on the caller's
+// thread, so start/stop must be called from a single thread — which both consumers
+// do. The compiler cannot see either discipline, so this conformance is asserted by hand.
 public final class StereoCamera: NSObject, @unchecked Sendable, AVCaptureVideoDataOutputSampleBufferDelegate {
     public weak var delegate: StereoCameraDelegate?
     public var rawFrameHandler: ((DecodedFrame) -> Void)?
 
     private let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
-    private let queue = DispatchQueue(label: "com.immersetebay.xrealmirror.capture")
+    let queue = DispatchQueue(label: "com.immersetebay.xrealmirror.capture")   // internal: test seam
     private var pairer = StereoPairer()
     private var skipCounter = 0
     private var started = false
+
+    private static let queueKey = DispatchSpecificKey<UInt8>()
+
+    public override init() {
+        super.init()
+        queue.setSpecific(key: Self.queueKey, value: 1)
+    }
 
     public static func findXRealDevice() -> AVCaptureDevice? {
         AVCaptureDevice.DiscoverySession(
@@ -90,12 +100,22 @@ public final class StereoCamera: NSObject, @unchecked Sendable, AVCaptureVideoDa
     }
 
     public func stop() {
-        queue.sync {
-            session.stopRunning()
-            pairer.reset()
-            skipCounter = 6
-            started = false
+        if DispatchQueue.getSpecific(key: Self.queueKey) != nil {
+            // Already on the capture queue (e.g. called from rawFrameHandler): run inline —
+            // queue.sync here would re-enter the serial queue and trap ("BUG IN CLIENT OF
+            // LIBDISPATCH: dispatch_sync called on queue already owned by current thread").
+            stopOnQueue()
+        } else {
+            queue.sync { stopOnQueue() }
         }
+    }
+
+    private func stopOnQueue() {
+        guard started else { return }   // stop before start is a no-op
+        session.stopRunning()
+        pairer.reset()
+        skipCounter = 6
+        started = false
     }
 
     nonisolated public func captureOutput(_ output: AVCaptureOutput,
