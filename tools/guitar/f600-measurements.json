@@ -1,0 +1,9 @@
+{
+  "_note" : "ESTIMATES — Person 1: replace with tape numbers (metres; plan Task 2). headstockEdgeToNut: ID 9 nut-side black edge midpoint → nut, along the headstock. headstockFaceToFretboard: fretboard surface above ID 9's face. headstockSideways: nut centre offset along ID 9's printed-right (+ treble). bodyMarkersFret: fret the ID 7/8 centres line up with. fretboardAboveBodyMarkers: fretboard surface above the 7/8 faces. bodyMidpointOffsetY: (treble-edge→ID7 gap − bass-edge→ID8 gap)/2.",
+  "bodyMarkersFret" : 14,
+  "bodyMidpointOffsetY" : 0,
+  "fretboardAboveBodyMarkers" : 0.009,
+  "headstockEdgeToNut" : 0.015,
+  "headstockFaceToFretboard" : 0.005,
+  "headstockSideways" : 0
+}

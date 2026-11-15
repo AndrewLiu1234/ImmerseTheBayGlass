@@ -220,7 +220,10 @@ enum RigidFit {
             for i in 0..<4 { nq[i] = (0..<4).reduce(0) { $0 + n[i][$1] * q[$1] } + shift * q[i] }
             let len = simd_length(nq)
             guard len > 0 else { return nil }
-            q = nq / len
+            let next = nq / len
+            let moved = simd_length(next - q)
+            q = next
+            if moved < 1e-13 { break }                    // converged (usually within a few dozen steps)
         }
         let rot = simd_double3x3(simd_quatd(ix: q[1], iy: q[2], iz: q[3], r: q[0]))
         let t = cb - rot * ca
