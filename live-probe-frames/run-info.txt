@@ -1,3 +1,0 @@
-2026-11-15T09:15:37Z
-frames: 2
-source: /tmp/fake-probe-out
