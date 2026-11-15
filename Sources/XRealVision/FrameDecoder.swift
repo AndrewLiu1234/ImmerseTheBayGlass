@@ -57,4 +57,71 @@ public enum XRealFrameDecoder {
         }
         return inverseMap[sync]
     }
+
+    /// Decodes a full 308,480-byte frame: recovers align, unpermutes the payload,
+    /// and parses the metadata row (sequence LE at +0x12, camera ID at +0x3A,
+    /// timestamp LE at +0x3E). Returns nil unless the frame has the exact frame size.
+    public static func decode(_ frame: [UInt8]) -> DecodedFrame? {
+        guard frame.count == FrameLayout.frameBytes else { return nil }
+        let payload = Array(frame[0..<FrameLayout.imageBytes])
+        guard let align = recoverAlign(payload: payload) else { return nil }
+        let scan = unpermute(payload: payload, align: align)
+        let m = FrameLayout.metadataOffset
+        let sequence = UInt16(frame[m + 0x12]) | (UInt16(frame[m + 0x13]) << 8)
+        let cameraID = frame[m + 0x3A]
+        var timestampMicros: UInt64 = 0
+        for i in 0..<8 { timestampMicros |= UInt64(frame[m + 0x3E + i]) << (8 * i) }
+        return DecodedFrame(scan: scan, align: align, sequence: sequence,
+                            cameraID: cameraID, timestampMicros: timestampMicros)
+    }
+
+    /// Inverse of the decode pipeline; the test oracle. Builds the column-major scan by the
+    /// inverse rotation for the camera, permutes it into raw blocks, writes the metadata row,
+    /// and fills the trailing region with 0x5C padding. Returns an empty array for a wrong
+    /// upright size or an unknown camera ID.
+    public static func encode(upright: [UInt8], cameraID: UInt8, sequence: UInt16,
+                              align: Int, timestampMicros: UInt64) -> [UInt8] {
+        guard upright.count == FrameLayout.uprightWidth * FrameLayout.uprightHeight else { return [] }
+        guard cameraID == CameraID.left || cameraID == CameraID.right else { return [] }
+        var scan = [UInt8](repeating: 0, count: FrameLayout.imageBytes)
+        if cameraID == CameraID.left {
+            // Left is CCW: upright[639-r][c] = scan[c*640+r]
+            for c in 0..<FrameLayout.sensorHeight {          // c = source row
+                for r in 0..<FrameLayout.sensorWidth {       // r = source column
+                    scan[c * FrameLayout.sensorWidth + r] =
+                        upright[(FrameLayout.uprightHeight - 1 - r) * FrameLayout.uprightWidth + c]
+                }
+            }
+        } else {
+            // Right is CW: upright[r][479-c] = scan[c*640+r]
+            for c in 0..<FrameLayout.sensorHeight {
+                for r in 0..<FrameLayout.sensorWidth {
+                    scan[c * FrameLayout.sensorWidth + r] =
+                        upright[r * FrameLayout.uprightWidth + (FrameLayout.uprightWidth - 1 - c)]
+                }
+            }
+        }
+        var frame = [UInt8](repeating: 0, count: FrameLayout.frameBytes)
+        for t in 0..<FrameLayout.blocks {
+            let src = t * FrameLayout.blockBytes
+            let dst = FrameLayout.reorderMap[(align + t) % FrameLayout.blocks] * FrameLayout.blockBytes
+            frame.replaceSubrange(dst..<(dst + FrameLayout.blockBytes),
+                                  with: scan[src..<(src + FrameLayout.blockBytes)])
+        }
+        let m = FrameLayout.metadataOffset
+        frame[m + 0x12] = UInt8(truncatingIfNeeded: sequence)
+        frame[m + 0x13] = UInt8(truncatingIfNeeded: sequence >> 8)
+        frame[m + 0x3A] = cameraID
+        for i in 0..<8 { frame[m + 0x3E + i] = UInt8(truncatingIfNeeded: timestampMicros >> (8 * i)) }
+        for i in FrameLayout.paddingOffset..<FrameLayout.frameBytes { frame[i] = 0x5C }
+        return frame
+    }
+}
+
+public struct DecodedFrame {
+    public let scan: [UInt8]           // 307,200 bytes, block-unpermuted, still column-major
+    public let align: Int              // 0..<128, recovered
+    public let sequence: UInt16        // uint16 LE at metadataOffset + 0x12
+    public let cameraID: UInt8         // uint8 at metadataOffset + 0x3A
+    public let timestampMicros: UInt64 // uint64 LE at metadataOffset + 0x3E
 }
