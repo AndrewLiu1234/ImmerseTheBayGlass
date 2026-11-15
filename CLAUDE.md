@@ -1,8 +1,9 @@
 # XRealMirror: agent notes
 
-A macOS app that mirrors both XREAL Air 2 Ultra tracking cameras live, side by side, and (stage 2) draws a 21-landmark
-hand skeleton over each eye pane. Nothing else: no calibration, 3D, webcam fallback, recording, gestures or MediaPipe.
-If a task drifts into those, stop and ask.
+A macOS app that mirrors both XREAL Air 2 Ultra tracking cameras live, side by side, draws a 21-landmark hand skeleton
+over each eye pane (stage 2), and triangulates both eyes into live 3-D hands shown in a SceneKit pane (stage 3, the
+user's direction Sun 2026-11-15; app lane, no spec doc yet). Nothing else: no webcam fallback, recording, gestures or
+MediaPipe. If a task drifts into those, stop and ask.
 Specs (authoritative: contract, constants, hazards): `docs/superpowers/specs/2026-11-14-xrealmirror-design.md` (stage 1)
 and `docs/superpowers/specs/2026-11-15-hand-tracking-design.md` (stage 2; supersedes stage 1 only on hand tracking/overlays).
 
@@ -10,6 +11,10 @@ and `docs/superpowers/specs/2026-11-15-hand-tracking-design.md` (stage 2; supers
 
 - `Sources/XRealVision/`: library. `XRealFrameDecoder` (pure byte decode), `StereoPairer`, `StereoCamera` (AVFoundation).
 - `Sources/XRealMirrorApp/`: SwiftUI app (`AppModel` owns permission + capture; `EyeView` sets `layer.contents` directly).
+  3-D hands: `StereoCalibration` (fisheye lenses + stereo extrinsics, from xr-gate's Air 2 Ultra camchain — another
+  unit, a start value) → `StereoHandFusion` (pairs hands across eyes by geometry, never Vision chirality; triangulates
+  21 joints) → `Hands3DScene`/`Hands3DView` (SceneKit, 1€-smoothed).
+- Live-data checks (skip without the env var): `XREAL_PROBE_PNGS=<dir> swift test --filter LiveFrame`.
 - `Sources/XRealProbe/`: CLI that verifies the live pipeline and dumps PNGs.
 - `Resources/Info.plist`, `scripts/bundle-app.sh`, `scripts/check-bundle.sh`: bundle and delivery gate.
 

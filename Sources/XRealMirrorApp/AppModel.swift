@@ -10,6 +10,8 @@ final class AppModel: NSObject, ObservableObject {
     @Published var latestFrame: StereoFrame?
     /// Lags latestFrame by up to one tracker cycle (~33 ms): the overlay runs at 30 fps, the mirror at 60.
     @Published var latestHands: StereoHands?
+    /// Hands triangulated from both eyes (left-camera frame, metres). Updated with latestHands at 30 fps.
+    @Published var latestHands3D: [Hand3D] = []
     @Published var pairsPerSecond: Double = 0
 
     /// A fresh StereoCamera per capture attempt: StereoCamera.stop() leaves the session's input/output attached,
@@ -17,6 +19,7 @@ final class AppModel: NSObject, ObservableObject {
     private var camera: StereoCamera?
     /// Fresh tracker per capture attempt, same lifecycle as the camera.
     private var handTracker: StereoHandTracker?
+    private let fusion = StereoHandFusion(calibration: .xrealAir2Ultra)
     private var pairCounter = 0
     private var silentSeconds = 0
     private var rateTimer: Timer?
@@ -60,6 +63,7 @@ final class AppModel: NSObject, ObservableObject {
         stop()  // Retry/reconnect while running must not stack sessions or timers.
         latestFrame = nil
         latestHands = nil
+        latestHands3D = []
         pairCounter = 0
         silentSeconds = 0
         pairsPerSecond = 0
@@ -145,6 +149,7 @@ extension AppModel: StereoHandTrackerDelegate {
         Task { @MainActor in
             guard let current = self.handTracker, ObjectIdentifier(current) == source else { return }
             self.latestHands = hands
+            self.latestHands3D = self.fusion.fuse(hands)   // ≈0.3 ms: 42 ray solves
         }
     }
 }

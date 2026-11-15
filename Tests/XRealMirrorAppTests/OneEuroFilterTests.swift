@@ -27,3 +27,22 @@ final class OneEuroFilterTests: XCTestCase {
         XCTAssertGreaterThan(out.y, 0.9)
     }
 }
+
+final class OneEuroFilter3Tests: XCTestCase {
+    func testFirstSamplePassesThroughAndConstantConverges() {
+        var f = OneEuroFilter3()
+        let p = SIMD3<Double>(0.1, -0.2, 0.3)
+        XCTAssertLessThan(simd_distance(f.filter(p, timestamp: 0), p), 1e-6)   // single-precision inside: < 1 µm
+        var out = f.filter(SIMD3(0.2, 0.1, 0.25), timestamp: 1.0 / 30)
+        for i in 2...90 { out = f.filter(SIMD3(0.2, 0.1, 0.25), timestamp: Double(i) / 30) }
+        XCTAssertLessThan(simd_distance(out, SIMD3(0.2, 0.1, 0.25)), 0.001)
+    }
+
+    func testStepInDepthSettlesWithinHalfSecond() {
+        var f = OneEuroFilter3()
+        _ = f.filter(SIMD3(0, 0, 0.2), timestamp: 0)
+        var out = SIMD3<Double>()
+        for i in 1...15 { out = f.filter(SIMD3(0, 0, 0.4), timestamp: Double(i) / 30) }
+        XCTAssertGreaterThan(out.z, 0.2 + 0.9 * 0.2)
+    }
+}

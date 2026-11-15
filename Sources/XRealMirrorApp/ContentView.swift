@@ -3,6 +3,7 @@ import XRealVision
 
 struct ContentView: View {
     @ObservedObject var model: AppModel
+    @State private var show3D = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -11,6 +12,12 @@ struct ContentView: View {
                     .overlay(alignment: .topLeading) { paneLabel("LEFT · 0x20") }
                 EyeView(image: model.latestFrame?.right.image, hands: model.latestHands?.rightEye)
                     .overlay(alignment: .topLeading) { paneLabel("RIGHT · 0x21") }
+                if show3D {
+                    Hands3DView(hands: model.latestHands3D)
+                        .overlay(alignment: .topLeading) { paneLabel("3D · BOTH EYES (drag to orbit)") }
+                        .overlay(alignment: .bottomLeading) { Hands3DReadout(hands: model.latestHands3D) }
+                        .frame(minWidth: 420)
+                }
             }
             .overlay {
                 if model.latestFrame == nil && model.status == .running {
@@ -26,6 +33,7 @@ struct ContentView: View {
                 if model.status == .running {
                     Text(String(format: "%.1f pairs/s", model.pairsPerSecond)).monospacedDigit()
                 }
+                Toggle("3D", isOn: $show3D).toggleStyle(.button).keyboardShortcut("3")
                 Button("Retry") { model.start() }.keyboardShortcut("r")
             }
             .padding(8)

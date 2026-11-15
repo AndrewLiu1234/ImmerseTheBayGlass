@@ -1,6 +1,6 @@
 # XRealMirror
 
-A macOS app that shows, live and side by side, what the two tracking cameras of an **XREAL Air 2 Ultra** see (left `0x20`, right `0x21`), correctly oriented. It does that and nothing else: no hand tracking, calibration, recording or overlays.
+A macOS app that shows, live and side by side, what the two tracking cameras of an **XREAL Air 2 Ultra** see (left `0x20`, right `0x21`), correctly oriented. On top of that it tracks your hands: a 2-D skeleton over each eye, and a **3-D pane** that combines both eyes into live 3-D hands (position in centimetres from the glasses, plus every finger joint). Drag the 3-D pane to orbit, scroll to zoom, double-click to reset; ⌘3 shows or hides it.
 
 ## Requirements
 

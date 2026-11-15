@@ -47,3 +47,21 @@ struct OneEuroFilter {
         return 1.0 / (1.0 + tau / dt)
     }
 }
+
+/// 1€ filter for a 3-D joint (metres): (x, y) and z each go through a 2-D filter. Speed is estimated per part,
+/// which is fine for hands — a fast move in depth still opens up the z filter.
+struct OneEuroFilter3 {
+    private var xy: OneEuroFilter
+    private var z: OneEuroFilter
+
+    init(minCutoff: Double = 1.0, beta: Double = 0.05, derivativeCutoff: Double = 1.0) {
+        xy = OneEuroFilter(minCutoff: minCutoff, beta: beta, derivativeCutoff: derivativeCutoff)
+        z = OneEuroFilter(minCutoff: minCutoff, beta: beta, derivativeCutoff: derivativeCutoff)
+    }
+
+    mutating func filter(_ p: SIMD3<Double>, timestamp: TimeInterval) -> SIMD3<Double> {
+        let a = xy.filter(SIMD2(Float(p.x), Float(p.y)), timestamp: timestamp)
+        let b = z.filter(SIMD2(Float(p.z), 0), timestamp: timestamp)
+        return SIMD3(Double(a.x), Double(a.y), Double(b.x))
+    }
+}
