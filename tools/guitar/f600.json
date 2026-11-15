@@ -1,0 +1,12 @@
+{
+  "fretCount" : 20,
+  "name" : "Yamaha F600",
+  "notes" : "scale + nut from retailer specs; width@12, string spreads and heights are estimates — replace with tape numbers",
+  "scaleLength" : 0.634,
+  "stringHeightAt12th" : 0.0026,
+  "stringHeightAtNut" : 0.0006,
+  "stringSpreadAtNut" : 0.036,
+  "stringSpreadAtSaddle" : 0.052,
+  "widthAt12th" : 0.052,
+  "widthAtNut" : 0.043
+}
