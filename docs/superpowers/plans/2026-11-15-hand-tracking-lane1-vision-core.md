@@ -398,11 +398,10 @@ private final class FakeDetector: HandDetecting {
 private final class CollectingDelegate: StereoHandTrackerDelegate {
     // Hold this in a local `let` in the test — tracker.delegate is weak, an inline temp would deallocate.
     var sequences: [UInt16] = []
-    let done: XCTestExpectation
-    init(_ done: XCTestExpectation) { self.done = done }
+    var done: XCTestExpectation?            // fulfilled on EVERY emit while set; tests swap it per step
     func stereoHandTracker(_ tracker: StereoHandTracker, didTrack hands: StereoHands) {
         sequences.append(hands.sequence)
-        done.fulfill()   // every emit fulfills; each test sets expectedFulfillmentCount to the exact emit count
+        done?.fulfill()
     }
 }
 
@@ -415,39 +414,72 @@ final class StereoHandTrackerTests: XCTestCase {
         return StereoFrame(left: left, right: right, sequence: seq, timestampMicros: UInt64(seq))
     }
 
+    /// Polls with the run loop so the tracker's queue gets CPU until `cond` holds.
+    private func waitUntil(timeout: TimeInterval = 5, _ cond: () -> Bool) {
+        let end = Date().addingTimeInterval(timeout)
+        while !cond() && Date() < end {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTAssertTrue(cond(), "condition not met within \(timeout)s")
+    }
+
     // Decimation counts ACCEPTED pairs, never sequence parity (sequence steps 256 on hardware).
+    // Handshake pacing keeps the worker caught up — the condition the spec's rule is defined under.
     func testDecimationProcessesEveryOtherPair() {
         let fake = FakeDetector()
         fake.results = [TrackedHand(landmarks: [SIMD2<Float>](repeating: .zero, count: 21),
                                     confidences: [Float](repeating: 1, count: 21), chirality: .left)]
+        let gate = DispatchSemaphore(value: 0)
+        fake.gate = gate
         let tracker = StereoHandTracker(detector: fake, processEveryNthPair: 2)
-        let done = expectation(description: "3 emissions for 5 accepted pairs")
-        done.expectedFulfillmentCount = 3
-        let delegate = CollectingDelegate(done)
+        let delegate = CollectingDelegate()
         tracker.delegate = delegate
-        for seq in [UInt16(0), 256, 512, 768, 1024] { tracker.accept(frame(seq)) }  // seq steps 256, like hardware
-        wait(for: [done], timeout: 5)
-        XCTAssertEqual(fake.callCount, 3)                       // accepted pairs 0, 2, 4
+
+        tracker.accept(frame(0))          // idx 0 → worker takes it, both eye detects block on gate
+        delegate.done = expectation(description: "emit 1")   // set BEFORE releasing — no slip window
+        gate.signal(); gate.signal()      // release both eyes (one per eye detect) → emit 0
+        wait(for: [delegate.done!], timeout: 5)
+
+        tracker.accept(frame(256))        // idx 1 → decimated away
+        tracker.accept(frame(512))        // idx 2 → worker takes it, blocks on gate
+        delegate.done = expectation(description: "emit 2")
+        gate.signal(); gate.signal()      // → emit 512
+        wait(for: [delegate.done!], timeout: 5)
+
+        tracker.accept(frame(768))        // idx 3 → decimated away
+        tracker.accept(frame(1024))       // idx 4 → worker takes it, blocks on gate
+        delegate.done = expectation(description: "emit 3")
+        gate.signal(); gate.signal()      // → emit 1024
+        wait(for: [delegate.done!], timeout: 5)
+
+        XCTAssertEqual(fake.callCount, 6)                 // 3 pairs × 2 eyes
+        XCTAssertEqual(delegate.sequences, [0, 512, 1024])
     }
 
-    // Latest-wins: the middle pending frame is dropped; the newest one is processed next.
+    // Latest-wins: seq 512 sits in `pending` while the worker is busy with seq 0; seq 1024
+    // REPLACES it — the spec's "newer replaces older" rule, pinned deterministically.
     func testLatestWinsDropsMiddleFrame() {
         let fake = FakeDetector()
         let gate = DispatchSemaphore(value: 0)
         fake.gate = gate
         let tracker = StereoHandTracker(detector: fake)
-        let done = expectation(description: "first then newest, never the middle")
-        done.expectedFulfillmentCount = 2
-        let delegate = CollectingDelegate(done)
+        let delegate = CollectingDelegate()
         tracker.delegate = delegate
-        tracker.accept(frame(0))    // starts processing, blocked on gate
-        tracker.accept(frame(2))    // pending
-        tracker.accept(frame(4))    // replaces pending
-        gate.signal()               // release first detect
-        gate.signal()               // release second detect (the loop then takes the newest pending: seq 4)
-        wait(for: [done], timeout: 5)
-        XCTAssertEqual(fake.callCount, 2)
-        XCTAssertEqual(delegate.sequences, [0, 4])
+
+        tracker.accept(frame(0))          // idx 0
+        waitUntil { fake.callCount == 1 } // worker has TAKEN seq 0 and is blocked in detect
+        tracker.accept(frame(256))        // idx 1 → decimated away
+        tracker.accept(frame(512))        // idx 2 → pending (worker busy)
+        tracker.accept(frame(768))        // idx 3 → decimated away
+        tracker.accept(frame(1024))       // idx 4 → REPLACES pending (latest wins)
+
+        delegate.done = expectation(description: "emit 0 then 1024")
+        delegate.done?.expectedFulfillmentCount = 2
+        gate.signal(); gate.signal()      // pair 0's two eyes → emit 0
+        gate.signal(); gate.signal()      // worker drains → takes 1024 → its two eyes → emit 1024
+        wait(for: [delegate.done!], timeout: 5)
+        XCTAssertEqual(fake.callCount, 4)                 // 2 pairs × 2 eyes
+        XCTAssertEqual(delegate.sequences, [0, 1024])
     }
 
     // Non-blocking: accept returns immediately even while detection is stuck.
@@ -456,17 +488,22 @@ final class StereoHandTrackerTests: XCTestCase {
         let gate = DispatchSemaphore(value: 0)
         fake.gate = gate
         let tracker = StereoHandTracker(detector: fake)
-        let done = expectation(description: "both accepted pairs eventually process")
-        done.expectedFulfillmentCount = 2
-        let delegate = CollectingDelegate(done)
+        let delegate = CollectingDelegate()
         tracker.delegate = delegate
+
+        tracker.accept(frame(0))          // idx 0
+        waitUntil { fake.callCount == 1 } // worker blocked in detect
         let start = Date()
-        tracker.accept(frame(0))
-        tracker.accept(frame(2))
-        XCTAssertLessThan(Date().timeIntervalSince(start), 0.5)   // both accepts returned
-        gate.signal(); gate.signal()
-        wait(for: [done], timeout: 5)
-        XCTAssertEqual(delegate.sequences, [0, 2])
+        tracker.accept(frame(256))        // idx 1 → decimated away
+        tracker.accept(frame(512))        // idx 2 → pending
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.5)   // accepts returned while detect stuck
+
+        delegate.done = expectation(description: "emit 0 then 512")
+        delegate.done?.expectedFulfillmentCount = 2
+        gate.signal(); gate.signal()      // pair 0's two eyes
+        gate.signal(); gate.signal()      // pair 512's two eyes
+        wait(for: [delegate.done!], timeout: 5)
+        XCTAssertEqual(delegate.sequences, [0, 512])
     }
 
     // Empty detections still emit, with the frame's sequence/timestamp and empty hands arrays.
@@ -543,15 +580,20 @@ public final class StereoHandTracker: @unchecked Sendable {
 
 Approach (the machinery the tests do not determine):
 - `accept`: under the NSLock, read `acceptedCount` as the pair's 0-based index, then increment it; when
-  `index % processEveryNthPair == 0`, store the frame in `pending` (replacing any older one) and signal a
-  counting `DispatchSemaphore`; never call the detector here. (So accepted pairs 0, 2, 4, … are processed —
-  the decimation test pins exactly that.)
-- A private serial `DispatchQueue` runs a loop: wait on the semaphore; take the newest `pending` under the lock
-  (set it nil); for each eye, `GrayToRGB.convert(image: frame.left.image)` / `frame.right.image` then
+  `index % processEveryNthPair == 0`, store the frame in `pending` (replacing any older one), and **signal the
+  worker only when a `needWorker` flag transitions false → true** — all under the same lock. Never call the
+  detector here. (A counting semaphore with a signal per accept over-counts: a burst of accepts replaces
+  `pending` several times while only one processing is needed, and stray signals desynchronize the tests.)
+- A private serial `DispatchQueue` runs the worker: wait on the semaphore (with a ~5s timeout so the loop
+  exits after the tracker is released — the `while let self` weak-capture re-check), then **drain**: repeatedly
+  take `pending` under the lock and process, until it is empty; taking an empty `pending` clears `needWorker`.
+  Because `accept`'s signal decision and the drain's clear happen under the same lock, a frame can never sit
+  unprocessed with no signal pending.
+- Processing one frame: for each eye, `GrayToRGB.convert(image: frame.left.image)` / `frame.right.image` then
   `detector.detectHands`; wrap in `StereoHands` with the frame's `sequence`/`timestampMicros`; call
   `delegate?.stereoHandTracker(self, didTrack:)` on the same queue (Lane 2 hops to main — their job).
-- Keep a retainable reference to the queue loop via `DispatchSource` or a semaphore-driven worker; document it
-  with a comment. `deinit` must not need queue teardown beyond the process lifetime.
+- Semantics this pins: under normal cadence the worker keeps up and every Nth pair processes; under a burst,
+  `pending` holds only the newest (latest-wins) and exactly one processing covers it.
 - `processEveryNthPair <= 0` → precondition failure.
 
 - [ ] **Step 4: Run the tests to verify they pass**
